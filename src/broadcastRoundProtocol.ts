@@ -2,8 +2,6 @@
   # Round Message Protocol
 
   This file describes messages describes ways that Pretty Sordid and Draw Steel Tools can be controlled using the Owlbear Rodeo Broadcast API.
-
-  Destination for the broadcast API should always be set to "LOCAL", this is not the default.
 */
 
 /*

@@ -13,7 +13,7 @@ export function broadcastRoundChangeEventMessage(roundNumber: number | null) {
     {
       roundNumber,
     } satisfies RoundChangeData,
-    { destination: "LOCAL" },
+    { destination: "ALL" },
   );
 }
 export function handleRoundChangeEventMessage(
