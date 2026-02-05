@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import Stack from "@mui/material/Stack";
 import IconButton from "@mui/material/IconButton";
@@ -34,6 +34,7 @@ import SortDescendingIcon from "../assets/SortDescendingIcon";
 import SettingsButton from "../settings/SettingsButton";
 import { labelItem, selectItem } from "../helpers/findItem";
 import useSelection from "../helpers/useSelection";
+import HeightMonitor from "../components/HeightMonitor";
 
 /** Check that the item metadata is in the correct format */
 function isMetadata(
@@ -251,41 +252,6 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
     });
   }
 
-  const zoomMargin = 1; // scroll bar shows up at 90% page zoom w/o this
-  const advancedControlsHeight = 56;
-  const listRef = useRef<HTMLUListElement>(null);
-  useEffect(() => {
-    if (listRef.current && ResizeObserver) {
-      const resizeObserver = new ResizeObserver((entries) => {
-        if (entries.length > 0) {
-          const entry = entries[0];
-          // Get the height of the border box
-          // In the future you can use `entry.borderBoxSize`
-          // however as of this time the property isn't widely supported (iOS)
-          const borderHeight = entry.contentRect.bottom + entry.contentRect.top;
-          // Set a minimum height of 64px
-          const listHeight = Math.max(borderHeight, 64);
-          // Set the action height to the list height + the card header height + the divider + margin
-          OBR.action.setHeight(
-            listHeight +
-              64 +
-              1 +
-              zoomMargin +
-              (advancedControls ? advancedControlsHeight : 0),
-          );
-        }
-      });
-      resizeObserver.observe(listRef.current);
-      return () => {
-        resizeObserver.disconnect();
-        // Reset height when unmounted
-        OBR.action.setHeight(
-          129 + zoomMargin + (advancedControls ? advancedControlsHeight : 0),
-        );
-      };
-    }
-  }, [advancedControls]);
-
   const order = useOrder();
   const sortedInitiativeItems = sortFromOrder(initiativeItems, order);
 
@@ -327,20 +293,26 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
       />
 
       <Box sx={{ overflowY: "auto" }}>
-        <List ref={listRef}>
-          {sortedInitiativeItems.map((item) => (
-            <InitiativeListItem
-              key={item.id}
-              item={item}
-              darkMode={themeIsDark}
-              onCountChange={(newCount) => {
-                handleInitiativeCountChange(item.id, newCount);
-              }}
-              showHidden={role === "GM"}
-              selected={selection.includes(item.id)}
-            />
-          ))}
-        </List>
+        <HeightMonitor
+          onChange={(height) =>
+            OBR.action.setHeight(height + 64 + 2 + (advancedControls ? 56 : 0))
+          }
+        >
+          <List>
+            {sortedInitiativeItems.map((item) => (
+              <InitiativeListItem
+                key={item.id}
+                item={item}
+                darkMode={themeIsDark}
+                onCountChange={(newCount) => {
+                  handleInitiativeCountChange(item.id, newCount);
+                }}
+                showHidden={role === "GM"}
+                selected={selection.includes(item.id)}
+              />
+            ))}
+          </List>
+        </HeightMonitor>
       </Box>
 
       {advancedControls && (
