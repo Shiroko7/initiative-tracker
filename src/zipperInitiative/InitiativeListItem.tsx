@@ -9,12 +9,12 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 
 import OBR from "@owlbear-rodeo/sdk";
 
-import { InitiativeItem } from "../InitiativeItem";
+import { InitiativeItem } from "../components/InitiativeItem";
 import { Checkbox, IconButton } from "@mui/material";
 import { Box } from "@mui/system";
-import { getPluginId } from "../getPluginId";
-import TokenImage from "../TokenImage";
-import { focusItem } from "../findItem";
+import { getPluginId } from "../helpers/getPluginId";
+import TokenImage from "../components/TokenImage";
+import { focusItem } from "../helpers/findItem";
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";

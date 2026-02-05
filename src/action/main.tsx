@@ -1,12 +1,23 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-
 import { App } from "./App";
-import { PluginGate } from "../PluginGate";
-import { PluginThemeProvider } from "../PluginThemeProvider";
-
+import { PluginGate } from "../components/PluginGate";
+import { PluginThemeProvider } from "../components/PluginThemeProvider";
 import "../index.css";
 import "./style.css";
+import {
+  broadcastRoundChangeEventMessage,
+  handleSetRoundNumberMessage,
+} from "../helpers/broadcastRoundImplementation";
+import { updateRoundCount } from "../helpers/metadataHelpers";
+import OBR from "@owlbear-rodeo/sdk";
+
+OBR.onReady(() => {
+  handleSetRoundNumberMessage((data) => {
+    updateRoundCount(data.roundNumber, () => {});
+    broadcastRoundChangeEventMessage(data.roundNumber);
+  });
+});
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

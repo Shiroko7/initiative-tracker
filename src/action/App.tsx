@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 
 import OBR, { Metadata, Player } from "@owlbear-rodeo/sdk";
-import { InitiativeHeader } from "../InitiativeHeader";
+import { InitiativeHeader } from "../components/InitiativeHeader";
 import { InitiativeTracker } from "../classicInitiative/InitiativeTracker";
 import {
   readBooleanFromMetadata,
   ZIPPER_INITIATIVE_ENABLED_METADATA_ID,
-} from "../metadataHelpers";
+} from "../helpers/metadataHelpers";
 import { ZipperInitiative } from "../zipperInitiative/ZipperInitiative";
-import { getPluginId } from "../getPluginId";
-import addThemeToBody from "../addThemeToBody";
+import { getPluginId } from "../helpers/getPluginId";
+import addThemeToBody from "../helpers/addThemeToBody";
 import { useTheme } from "@mui/material";
 
 const addIcon = new URL("../assets/add.svg#icon", import.meta.url).toString();

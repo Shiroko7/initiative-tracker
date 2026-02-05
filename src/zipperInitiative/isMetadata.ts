@@ -1,4 +1,4 @@
-import { isPlainObject } from "../isPlainObject";
+import { isPlainObject } from "../helpers/isPlainObject";
 
 /** Check that the item metadata is in the correct format */
 export default function isMetadata(metadata: unknown): metadata is {

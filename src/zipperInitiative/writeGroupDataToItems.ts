@@ -1,7 +1,7 @@
 import OBR from "@owlbear-rodeo/sdk";
-import { InitiativeItem } from "../InitiativeItem";
+import { InitiativeItem } from "../components/InitiativeItem";
 import isMetadata from "./isMetadata";
-import { getPluginId } from "../getPluginId";
+import { getPluginId } from "../helpers/getPluginId";
 
 export default async function writeGroupDataToItems(
   initiativeItems: InitiativeItem[],

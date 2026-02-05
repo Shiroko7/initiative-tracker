@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import Stack from "@mui/material/Stack";
 import IconButton from "@mui/material/IconButton";
@@ -9,12 +9,13 @@ import LoopRoundedIcon from "@mui/icons-material/LoopRounded";
 
 import OBR, { isImage, Item, Metadata } from "@owlbear-rodeo/sdk";
 
-import { InitiativeItem } from "../InitiativeItem";
+import { InitiativeItem } from "../components/InitiativeItem";
 
-import { getPluginId } from "../getPluginId";
-import { InitiativeHeader } from "../InitiativeHeader";
+import { getPluginId } from "../helpers/getPluginId";
+import { InitiativeHeader } from "../components/InitiativeHeader";
 import { Divider, Typography } from "@mui/material";
 import {
+  DISABLE_NOTIFICATION_METADATA_ID,
   DISPLAY_ROUND_METADATA_ID,
   PREVIOUS_STACK_METADATA_ID,
   readBooleanFromMetadata,
@@ -22,13 +23,14 @@ import {
   readStringArrayFromMetadata,
   ROUND_COUNT_METADATA_ID,
   SELECT_ACTIVE_ITEM_METADATA_ID,
-} from "../metadataHelpers";
+  updateRoundCount,
+} from "../helpers/metadataHelpers";
 import SettingsButton from "../settings/SettingsButton";
 import { InitiativeListItem } from "./InitiativeListItem";
 
 import ModeEditRoundedIcon from "@mui/icons-material/ModeEditRounded";
 import EditOffRoundedIcon from "@mui/icons-material/EditOffRounded";
-import { labelItem, removeLabel, selectItem } from "../findItem";
+import { labelItem, removeLabel, selectItem } from "../helpers/findItem";
 import { writePreviousStackToScene } from "./previousStack";
 import {
   closestCenter,
@@ -43,7 +45,10 @@ import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import isMetadata from "./isMetadata";
 import writeGroupDataToItems from "./writeGroupDataToItems";
-import useSelection from "../useSelection";
+import useSelection from "../helpers/useSelection";
+import HeightMonitor from "../components/HeightMonitor";
+import { RoundControl } from "../components/RoundControl";
+import { broadcastRoundChangeEventMessage } from "../helpers/broadcastRoundImplementation";
 
 export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   const [initiativeItems, setInitiativeItems] = useState<InitiativeItem[]>([]);
@@ -51,6 +56,7 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
 
   const [roundCount, setRoundCount] = useState(1);
   const [displayRound, setDisplayRound] = useState(false);
+  const [disableNotifications, setDisableNotifications] = useState(false);
   const [selectActiveItem, setSelectActiveItem] = useState(0);
 
   const [editMode, setEditMode] = useState(false);
@@ -81,6 +87,13 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
           roomMetadata,
           DISPLAY_ROUND_METADATA_ID,
           displayRound,
+        ),
+      );
+      setDisableNotifications(
+        readBooleanFromMetadata(
+          roomMetadata,
+          DISABLE_NOTIFICATION_METADATA_ID,
+          disableNotifications,
         ),
       );
       setSelectActiveItem(
@@ -215,7 +228,21 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
     );
   }
 
+  const roundFinished =
+    initiativeItems.filter((item) => item.ready).length === 0;
+  const lastItem = initiativeItems.filter((item) => item.ready).length <= 1;
+
   function handleResetClicked() {
+    if (roundFinished || (lastItem && initiativeItems.length > 1)) {
+      if (displayRound) {
+        const newRoundCount = roundCount + 1;
+        updateRoundCount(newRoundCount, setRoundCount);
+        broadcastRoundChangeEventMessage(newRoundCount);
+      } else {
+        broadcastRoundChangeEventMessage(null);
+      }
+    }
+
     // Clear previous stack
     setPreviousStack([]);
     writePreviousStackToScene([]);
@@ -248,57 +275,6 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
     if (selectActiveItem == 2) removeLabel();
   }
 
-  const zoomMargin = 1; // scroll bar shows up at 90% page zoom w/o this
-  const roundCountHeight = 56;
-  const listRef0 = useRef<HTMLUListElement>(null);
-  const listRef1 = useRef<HTMLUListElement>(null);
-  const listRefs: React.RefObject<HTMLUListElement>[] = [listRef0, listRef1];
-  type HeightTracker = { resizeObserver: ResizeObserver; height: number };
-  useEffect(() => {
-    if (listRef0.current && listRef1.current && ResizeObserver) {
-      const makeResizeObserver = (
-        listHeights: HeightTracker[],
-        index: number,
-      ) =>
-        new ResizeObserver((entries) => {
-          if (entries.length > 0) {
-            const entry = entries[0];
-            // Get the height of the border box
-            // In the future you can use `entry.borderBoxSize`
-            // however as of this time the property isn't widely supported (iOS)
-            const borderHeight =
-              entry.contentRect.bottom + entry.contentRect.top;
-            // Set a minimum height of 64px
-            listHeights[index].height = Math.max(borderHeight, 0);
-            let sum = 0;
-            listHeights.forEach((height) => {
-              sum += Math.max(height.height, 36);
-            });
-            // Set the action height to the list height + the card header height + the divider + margin
-            OBR.action.setHeight(sum + 64 + 1 + zoomMargin + 49 * 2);
-          }
-        });
-      const listHeights: HeightTracker[] = [];
-      for (let i = 0; i < listRefs.length; i++) {
-        listHeights.push({
-          resizeObserver: makeResizeObserver(listHeights, i),
-          height: 0,
-        });
-        const current = listRefs[i].current;
-        if (current) listHeights[i].resizeObserver.observe(current);
-      }
-      return () => {
-        listHeights.forEach((value) => {
-          value.resizeObserver.disconnect();
-        });
-        // Reset height when unmounted
-        OBR.action.setHeight(
-          129 + zoomMargin + (roundCount ? roundCountHeight : 0),
-        );
-      };
-    }
-  }, [roundCount]);
-
   const partyItems = initiativeItems.filter((item) => item.group === 0);
   const enemyItems = initiativeItems.filter((item) => item.group === 1);
   const adversariesDividerId = getGroupDividerId("Adversaries");
@@ -310,8 +286,6 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
 
   const allEnemiesHidden =
     enemyItems.filter((item) => item.visible).length === 0;
-  const roundFinished =
-    initiativeItems.filter((item) => item.ready).length === 0;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -425,72 +399,92 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
           />
 
           <Box sx={{ overflowY: "auto", overflowX: "clip" }}>
-            <GroupHeading groupName="Party" />
-
-            <GroupHint
-              visible={partyItems.length === 0}
-              hintText={
-                Math.random() < 0.1 &&
-                enemyItems.length !== 0 &&
-                !allEnemiesHidden
-                  ? "I need a hero!"
-                  : "The party seems to be empty..."
+            <HeightMonitor
+              onChange={(height) =>
+                OBR.action.setHeight(height + 64 + 2 + (displayRound ? 54 : 0))
               }
-            />
+            >
+              <GroupHeading groupName="Party" />
 
-            <List ref={listRef0} sx={{ py: 0 }}>
-              {partyItems.map((item) => (
-                <InitiativeListItem
-                  key={item.id}
-                  item={item}
-                  onReadyChange={(ready) => {
-                    handleReadyChange(
-                      item.id,
-                      ready,
-                      previousStack.length > 1
-                        ? (previousStack.at(previousStack.length - 2) as string)
-                        : "",
-                    );
-                  }}
-                  showHidden={role === "GM"}
-                  edit={editMode}
-                  selected={selection.includes(item.id)}
-                />
-              ))}
-            </List>
+              <GroupHint
+                visible={partyItems.length === 0}
+                hintText={
+                  Math.random() < 0.1 &&
+                  enemyItems.length !== 0 &&
+                  !allEnemiesHidden
+                    ? "I need a hero!"
+                    : "The party seems to be empty..."
+                }
+              />
 
-            <SortableGroupHeading groupName="Adversaries" />
-            <List ref={listRef1} sx={{ py: 0 }}>
-              {enemyItems.map((item) => (
-                <InitiativeListItem
-                  key={item.id}
-                  item={item}
-                  onReadyChange={(ready) => {
-                    handleReadyChange(
-                      item.id,
-                      ready,
-                      previousStack.length > 1
-                        ? (previousStack.at(previousStack.length - 2) as string)
-                        : "",
-                    );
-                  }}
-                  showHidden={role === "GM"}
-                  edit={editMode}
-                  selected={selection.includes(item.id)}
-                />
-              ))}
-            </List>
-            <GroupHint
-              visible={
-                enemyItems.length === 0 || (allEnemiesHidden && role !== "GM")
-              }
-              hintText={
-                partyItems.length === 0
-                  ? "The action must be elsewhere..."
-                  : "The party stands uncontested"
-              }
-            />
+              <List sx={{ py: 0 }}>
+                {partyItems.map((item) => (
+                  <InitiativeListItem
+                    key={item.id}
+                    item={item}
+                    onReadyChange={(ready) => {
+                      handleReadyChange(
+                        item.id,
+                        ready,
+                        previousStack.length > 1
+                          ? (previousStack.at(
+                              previousStack.length - 2,
+                            ) as string)
+                          : "",
+                      );
+                    }}
+                    showHidden={role === "GM"}
+                    edit={editMode}
+                    selected={selection.includes(item.id)}
+                  />
+                ))}
+              </List>
+
+              <SortableGroupHeading groupName="Adversaries" />
+              <List sx={{ py: 0 }}>
+                {enemyItems.map((item) => (
+                  <InitiativeListItem
+                    key={item.id}
+                    item={item}
+                    onReadyChange={(ready) => {
+                      handleReadyChange(
+                        item.id,
+                        ready,
+                        previousStack.length > 1
+                          ? (previousStack.at(
+                              previousStack.length - 2,
+                            ) as string)
+                          : "",
+                      );
+                    }}
+                    showHidden={role === "GM"}
+                    edit={editMode}
+                    selected={selection.includes(item.id)}
+                  />
+                ))}
+              </List>
+              <GroupHint
+                visible={
+                  enemyItems.length === 0 || (allEnemiesHidden && role !== "GM")
+                }
+                hintText={
+                  partyItems.length === 0
+                    ? "The action must be elsewhere..."
+                    : "The party stands uncontested"
+                }
+              />
+            </HeightMonitor>
           </Box>
+          {displayRound && (
+            <div className="grid place-items-center py-2">
+              <RoundControl
+                roundCount={roundCount}
+                setRoundCount={setRoundCount}
+                playerRole={role}
+                disableNotifications={disableNotifications}
+              />
+            </div>
+          )}
         </Stack>
       </SortableContext>
     </DndContext>

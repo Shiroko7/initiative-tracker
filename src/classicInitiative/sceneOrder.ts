@@ -1,6 +1,6 @@
 import OBR, { Metadata } from "@owlbear-rodeo/sdk";
-import { InitiativeItem } from "../InitiativeItem";
-import { getPluginId } from "../getPluginId";
+import { InitiativeItem } from "../components/InitiativeItem";
+import { getPluginId } from "../helpers/getPluginId";
 import { useEffect, useState } from "react";
 
 /** Sort items in place and write sorted order to the scene. */
@@ -9,7 +9,7 @@ export function sortList(items: InitiativeItem[], sortAscending = false) {
   const sorted = items.sort(
     sortAscending
       ? (a, b) => parseFloat(a.count) - parseFloat(b.count)
-      : (a, b) => parseFloat(b.count) - parseFloat(a.count)
+      : (a, b) => parseFloat(b.count) - parseFloat(a.count),
   );
 
   // Build a index: id object to represent initiative order
@@ -31,10 +31,10 @@ export function useOrder() {
     const updateOrder = (sceneMetadata: Metadata) => {
       setOrder(getOrder(sceneMetadata));
     };
-    OBR.scene.getMetadata().then(sceneMetadata => {
+    OBR.scene.getMetadata().then((sceneMetadata) => {
       updateOrder(sceneMetadata);
     });
-    return OBR.scene.onMetadataChange(sceneMetadata => {
+    return OBR.scene.onMetadataChange((sceneMetadata) => {
       updateOrder(sceneMetadata);
     });
   }, []);
@@ -69,7 +69,7 @@ export function sortFromOrder(items: InitiativeItem[], order: object) {
   // Add sorted items to the initiative list
   const newItems: InitiativeItem[] = [];
   for (let i = 0; i < values.length; i++) {
-    const item = items.find(item => item.id === values[i]);
+    const item = items.find((item) => item.id === values[i]);
     if (typeof item !== "undefined") {
       newItems.push(item);
     }
@@ -77,7 +77,7 @@ export function sortFromOrder(items: InitiativeItem[], order: object) {
 
   // Add any remaining unsorted items to the initiative list
   for (let i = 0; i < items.length; i++) {
-    const found = newItems.find(item => item.id === items[i].id);
+    const found = newItems.find((item) => item.id === items[i].id);
     if (typeof found === "undefined") {
       newItems.push(items[i]);
     }

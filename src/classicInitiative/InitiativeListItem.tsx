@@ -7,13 +7,13 @@ import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
 
 import OBR from "@owlbear-rodeo/sdk";
 
-import { InitiativeItem } from "../InitiativeItem";
+import { InitiativeItem } from "../components/InitiativeItem";
 import { IconButton } from "@mui/material";
 import { Box } from "@mui/system";
 import { useState } from "react";
-import { getPluginId } from "../getPluginId";
-import TokenImage from "../TokenImage";
-import { focusItem } from "../findItem";
+import { getPluginId } from "../helpers/getPluginId";
+import TokenImage from "../components/TokenImage";
+import { focusItem } from "../helpers/findItem";
 
 type InitiativeListItemProps = {
   item: InitiativeItem;

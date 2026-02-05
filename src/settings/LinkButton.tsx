@@ -1,5 +1,5 @@
 import { Tooltip } from "@mui/material";
-import { cn } from "../utils";
+import { cn } from "../helpers/utils";
 
 export default function LinkButton({
   name,
@@ -16,7 +16,7 @@ export default function LinkButton({
     <Tooltip title={name}>
       <a
         className={cn(
-          "focus-visible:ring-secondary dark:focus-visible:ring-secondary-dark flex items-center justify-center border border-gray-300 fill-gray-800 stroke-gray-800 outline-none hover:bg-gray-200 focus-visible:ring-2 dark:border-gray-700 dark:fill-gray-50 dark:stroke-gray-50 dark:hover:bg-gray-700",
+          "flex items-center justify-center border border-gray-300 fill-gray-800 stroke-gray-800 outline-none hover:bg-gray-200 focus-visible:ring-2 focus-visible:ring-secondary dark:border-gray-700 dark:fill-gray-50 dark:stroke-gray-50 dark:hover:bg-gray-700 dark:focus-visible:ring-secondary-dark",
           {
             "size-[36px] rounded-lg": size === "base" || size === undefined,
             "size-10 rounded-full": size === "large",
