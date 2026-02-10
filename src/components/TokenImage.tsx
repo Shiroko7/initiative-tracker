@@ -48,12 +48,10 @@ export default function TokenImage({
 
   return (
     <img
-      className={cn("tokenIcon", {
+      className={cn("tokenIcon max-h-11 max-w-[30px] object-scale-down", {
         "outline-image dark:outline-image": outline,
       })}
       src={image.src}
-      width="30px"
-      height="30px"
       onError={() => {
         setImageAvailable(false);
       }}

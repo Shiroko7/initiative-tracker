@@ -14,6 +14,7 @@ import { useState } from "react";
 import { getPluginId } from "../helpers/getPluginId";
 import TokenImage from "../components/TokenImage";
 import { focusItem } from "../helpers/findItem";
+import { cn } from "../helpers/utils";
 
 type InitiativeListItemProps = {
   item: InitiativeItem;
@@ -98,7 +99,9 @@ export function InitiativeListItem({
     >
       <Box
         component={"div"}
-        className={!item.visible && showHidden ? "hiddenGrid" : "standardGrid"}
+        className={cn("grid grid-cols-[30px_1fr] items-center gap-2", {
+          "grid-cols-[30px_20px_1fr]": !item.visible && showHidden,
+        })}
       >
         <IconButton
           sx={{ paddingX: 0, paddingY: 0, height: 30, width: 30 }}
@@ -106,12 +109,14 @@ export function InitiativeListItem({
           tabIndex={-1}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <div className="buttonBox">
-            <TokenImage src={item.url} outline={selected} />
+          <div className="group grid place-items-center">
+            <div className="col-start-1 row-start-1 group-hover:opacity-0">
+              <TokenImage src={item.url} outline={selected} />
+            </div>
             <CloseIcon
-              className="closeIcon"
+              className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
               sx={{ height: 30, width: 30 }}
-            ></CloseIcon>
+            />
           </div>
         </IconButton>
 
