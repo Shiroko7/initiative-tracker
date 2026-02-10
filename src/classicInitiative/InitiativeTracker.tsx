@@ -320,7 +320,9 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
       <Box sx={{ overflowY: "auto" }}>
         <HeightMonitor
           onChange={(height) =>
-            OBR.action.setHeight(height + 64 + 2 + (advancedControls ? 56 : 0))
+            OBR.action.setHeight(
+              66 + Math.max(64, height) + (advancedControls ? 56 : 0),
+            )
           }
         >
           <List>
