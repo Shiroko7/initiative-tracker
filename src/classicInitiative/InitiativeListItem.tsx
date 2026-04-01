@@ -2,7 +2,7 @@ import ListItem from "@mui/material/ListItem";
 import Input from "@mui/material/Input";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import CloseIcon from "@mui/icons-material/Close";
-
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
 
 import OBR from "@owlbear-rodeo/sdk";
@@ -16,12 +16,16 @@ import TokenImage from "../components/TokenImage";
 import { focusItem } from "../helpers/findItem";
 import { cn } from "../helpers/utils";
 
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
 type InitiativeListItemProps = {
   item: InitiativeItem;
   onCountChange: (count: string) => void;
   showHidden: boolean;
   darkMode: boolean;
   selected: boolean;
+  edit: boolean;
 };
 
 export function InitiativeListItem({
@@ -30,71 +34,78 @@ export function InitiativeListItem({
   showHidden,
   darkMode,
   selected,
+  edit,
 }: InitiativeListItemProps) {
   const [inputHasFocus, setInputHasFocus] = useState(false);
   const [inputHasHover, setInputHasHover] = useState(false);
+
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: item.id });
 
   if (!item.visible && !showHidden) {
     return null;
   }
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   const handleFocus = (target: HTMLInputElement) => {
     target.select();
   };
 
-  // const [buttonHasHover, setButtonHasHover] = useState(false);
-
   return (
     <ListItem
+      ref={setNodeRef}
+      style={{ ...style, cursor: "pointer" }}
+      {...attributes}
       key={item.id}
       secondaryAction={
-        <Input
-          disableUnderline
-          sx={{ width: 48 }}
-          onFocus={(evt) => {
-            setInputHasFocus(true);
-            handleFocus(evt.target as HTMLInputElement);
-          }}
-          onBlur={() => setInputHasFocus(false)}
-          onMouseEnter={() => setInputHasHover(true)}
-          onMouseLeave={() => setInputHasHover(false)}
-          inputProps={{
-            sx: {
-              textAlign: inputHasFocus ? "center" : "center",
-              pt: "5px",
-              // paddingX: 1,
-              // width: "40px",
-            },
-            style: {
-              borderRadius: 8,
-              backgroundColor: inputHasFocus
-                ? darkMode
-                  ? "rgba(0,0,0,0.4)"
-                  : "rgba(255,255,255,0.24)"
-                : inputHasHover
+        edit ? (
+          <button
+            style={{ touchAction: "none" }}
+            {...listeners}
+            className="flex size-[42px] items-center justify-center bg-transparent"
+          >
+            <DragIndicatorIcon />
+          </button>
+        ) : (
+          <Input
+            disableUnderline
+            sx={{ width: 48 }}
+            onFocus={(evt) => {
+              setInputHasFocus(true);
+              handleFocus(evt.target as HTMLInputElement);
+            }}
+            onBlur={() => setInputHasFocus(false)}
+            onMouseEnter={() => setInputHasHover(true)}
+            onMouseLeave={() => setInputHasHover(false)}
+            inputProps={{
+              sx: { textAlign: "center", pt: "5px" },
+              style: {
+                borderRadius: 8,
+                backgroundColor: inputHasFocus
                   ? darkMode
-                    ? "rgba(0,0,0,0.15)"
-                    : "rgba(255,255,255,0.12)"
-                  : "rgba(0,0,0,0)",
-              // backgroundColor: (inputHasFocus)?"rgba(0,0,0,0.2)":"rgba(0,0,0,0)",
-              transition: ".1s",
-            },
-          }}
-          value={item.count}
-          onChange={(e) => {
-            const newCount = e.target.value;
-            onCountChange(newCount);
-          }}
-          onDoubleClick={(e) => e.stopPropagation()}
-        />
+                    ? "rgba(0,0,0,0.4)"
+                    : "rgba(255,255,255,0.24)"
+                  : inputHasHover
+                    ? darkMode
+                      ? "rgba(0,0,0,0.15)"
+                      : "rgba(255,255,255,0.12)"
+                    : "rgba(0,0,0,0)",
+                transition: ".1s",
+              },
+            }}
+            value={item.count}
+            onChange={(e) => onCountChange(e.target.value)}
+            onDoubleClick={(e) => e.stopPropagation()}
+          />
+        )
       }
       divider
       selected={item.active}
-      sx={{
-        padding: 1,
-        pl: "12px",
-        pr: "64px",
-      }}
+      sx={{ padding: 1, pl: "12px", pr: "64px" }}
       onDoubleClick={() => focusItem(item.id)}
     >
       <Box
@@ -128,8 +139,7 @@ export function InitiativeListItem({
         <Box
           component="div"
           sx={{
-            color:
-              !item.visible && showHidden ? "text.disabled" : "text.primary",
+            color: !item.visible && showHidden ? "text.disabled" : "text.primary",
             pb: "2px",
           }}
         >

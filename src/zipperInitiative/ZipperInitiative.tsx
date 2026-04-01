@@ -9,8 +9,7 @@ import LoopRoundedIcon from "@mui/icons-material/LoopRounded";
 import ModeEditRoundedIcon from "@mui/icons-material/ModeEditRounded";
 import EditOffRoundedIcon from "@mui/icons-material/EditOffRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
+import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 
 import OBR, { isImage, Item, Metadata } from "@owlbear-rodeo/sdk";
 
@@ -18,7 +17,8 @@ import { InitiativeItem } from "../components/InitiativeItem";
 
 import { getPluginId } from "../helpers/getPluginId";
 import { InitiativeHeader } from "../components/InitiativeHeader";
-import { Divider, TextField, Typography } from "@mui/material";
+import { Typography } from "@mui/material";
+import { EditableGroupHeading } from "../components/EditableGroupHeading";
 import {
   DISABLE_NOTIFICATION_METADATA_ID,
   DISPLAY_ROUND_METADATA_ID,
@@ -46,7 +46,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable } from "@dnd-kit/sortable";
+import { arrayMove, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { restrictToFirstScrollableAncestor } from "@dnd-kit/modifiers";
 
 import { CSS } from "@dnd-kit/utilities";
@@ -77,6 +77,12 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   const [selectActiveItem, setSelectActiveItem] = useState(0);
 
   const [editMode, setEditMode] = useState(false);
+  const [mergeHistory, setMergeHistory] = useState<
+    Array<{
+      groups: InitiativeGroup[];
+      items: Array<{ id: string; group: number; groupIndex: number }>;
+    }>
+  >([]);
 
   const selection = useSelection();
 
@@ -189,10 +195,16 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   }
 
   function handleCreateGroup() {
-    const maxId = groups.reduce((max, g) => Math.max(max, g.id), -1);
+    const usedIds = new Set([
+      ...groups.map((g) => g.id),
+      ...initiativeItems.map((i) => i.group),
+    ]);
+    let newId = 0;
+    while (usedIds.has(newId)) newId++;
+    const letter = String.fromCharCode(65 + groups.length); // A, B, C...
     const newGroup: InitiativeGroup = {
-      id: maxId + 1,
-      name: `Group ${groups.length + 1}`,
+      id: newId,
+      name: `Group ${letter}`,
     };
     const newGroups = [...groups, newGroup];
     setGroups(newGroups);
@@ -205,6 +217,47 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
     );
     setGroups(newGroups);
     saveGroupsToScene(newGroups);
+  }
+
+  function handleMergeGroup(sourceId: number, targetId: number) {
+    setMergeHistory((prev) => [
+      ...prev,
+      {
+        groups: [...groups],
+        items: initiativeItems.map((i) => ({
+          id: i.id,
+          group: i.group,
+          groupIndex: i.groupIndex,
+        })),
+      },
+    ]);
+    const newInitiativeItems = initiativeItems.map((item) =>
+      item.group === sourceId
+        ? { ...item, group: targetId, groupIndex: -1 }
+        : item,
+    );
+    guaranteeMinimumGroupIndices(newInitiativeItems);
+    setInitiativeItems(newInitiativeItems);
+    writeGroupDataToItems(newInitiativeItems);
+    const newGroups = groups.filter((g) => g.id !== sourceId);
+    setGroups(newGroups);
+    saveGroupsToScene(newGroups);
+  }
+
+  function handleUndoMerge() {
+    const last = mergeHistory[mergeHistory.length - 1];
+    if (!last) return;
+    setMergeHistory((prev) => prev.slice(0, -1));
+    setGroups(last.groups);
+    saveGroupsToScene(last.groups);
+    const newInitiativeItems = initiativeItems.map((item) => {
+      const saved = last.items.find((i) => i.id === item.id);
+      return saved
+        ? { ...item, group: saved.group, groupIndex: saved.groupIndex }
+        : item;
+    });
+    setInitiativeItems(newInitiativeItems);
+    writeGroupDataToItems(newInitiativeItems);
   }
 
   function handleDeleteGroup(groupId: number) {
@@ -326,17 +379,23 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   }
 
   // Build per-group item lists sorted by groupIndex
-  const groupedItems = groups.map((group) => ({
+  // Items whose group ID isn't in the groups list fall into the first group
+  const knownGroupIds = new Set(groups.map((g) => g.id));
+  const groupedItems = groups.map((group, index) => ({
     group,
     items: initiativeItems
-      .filter((item) => item.group === group.id)
+      .filter(
+        (item) =>
+          item.group === group.id ||
+          (index === 0 && !knownGroupIds.has(item.group)),
+      )
       .sort((a, b) => a.groupIndex - b.groupIndex),
   }));
 
-  // Build flat sortable list: group0Items, divider_1, group1Items, divider_2, ...
+  // Every group gets a divider (including the first) so headers are draggable
   const sortableItems: string[] = [];
   for (let i = 0; i < groupedItems.length; i++) {
-    if (i > 0) sortableItems.push(getGroupDividerId(groupedItems[i].group.id));
+    sortableItems.push(getGroupDividerId(groupedItems[i].group.id));
     sortableItems.push(...groupedItems[i].items.map((item) => item.id));
   }
 
@@ -355,29 +414,46 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
         const { active, over } = event;
         if (!over?.id || active.id === over.id) return;
 
-        const activeItem = initiativeItems.find(
-          (item) => item.id === active.id,
-        );
-        if (activeItem === undefined) return;
-
-        const activeIndex = sortableItems.findIndex((id) => id === active.id);
-        const overIndex = sortableItems.findIndex((id) => id === over.id);
-        const newInitiativeItems = [...initiativeItems];
+        const activeId = active.id as string;
         const overId = over.id as string;
 
+        // ── Group header drag → reorder groups ──────────────────────────
+        if (isDivider(activeId)) {
+          const sourceGroupId = getDividerGroupId(activeId);
+          const targetGroupId = isDivider(overId)
+            ? getDividerGroupId(overId)
+            : initiativeItems.find((i) => i.id === overId)?.group;
+          if (targetGroupId === undefined || sourceGroupId === targetGroupId)
+            return;
+          const sourceIdx = groups.findIndex((g) => g.id === sourceGroupId);
+          const targetIdx = groups.findIndex((g) => g.id === targetGroupId);
+          const newGroups = arrayMove(groups, sourceIdx, targetIdx);
+          setGroups(newGroups);
+          saveGroupsToScene(newGroups);
+          return;
+        }
+
+        // ── Token drag ───────────────────────────────────────────────────
+        const activeItem = initiativeItems.find((item) => item.id === activeId);
+        if (activeItem === undefined) return;
+
+        const activeIndex = sortableItems.findIndex((id) => id === activeId);
+        const overIndex = sortableItems.findIndex((id) => id === overId);
+        const newInitiativeItems = [...initiativeItems];
+
         if (isDivider(overId)) {
-          // Dragged over a group divider boundary
           const targetGroupId = getDividerGroupId(overId);
           const targetGroupArrayIdx = groups.findIndex(
             (g) => g.id === targetGroupId,
           );
 
           if (activeIndex < overIndex) {
-            // Active item is before this divider → move to group after divider
+            activeItem.group = targetGroupId;
+            activeItem.groupIndex = -2;
+          } else if (targetGroupArrayIdx === 0) {
             activeItem.group = targetGroupId;
             activeItem.groupIndex = -2;
           } else {
-            // Active item is after this divider → move to end of group before divider
             const prevGroupId = groups[targetGroupArrayIdx - 1].id;
             const prevGroupCount = initiativeItems.filter(
               (item) => item.group === prevGroupId && item.id !== activeItem.id,
@@ -448,6 +524,15 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                     <AddRoundedIcon />
                   </IconButton>
                 )}
+                {role === "GM" && editMode && mergeHistory.length > 0 && (
+                  <IconButton
+                    size="small"
+                    onClick={handleUndoMerge}
+                    title="Undo merge"
+                  >
+                    <UndoRoundedIcon />
+                  </IconButton>
+                )}
 
                 {editMode ? (
                   <IconButton onClick={() => setEditMode(false)}>
@@ -476,36 +561,42 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                 OBR.action.setHeight(height + 64 + 2 + (displayRound ? 54 : 0))
               }
             >
-              {groupedItems.map(({ group, items }, index) => {
+              {groupedItems.map(({ group, items }) => {
                 const allHidden =
                   items.filter((item) => item.visible).length === 0;
                 const isEmpty = items.length === 0;
                 const showHint = isEmpty || (allHidden && role !== "GM");
 
-                const heading = (
-                  <EditableGroupHeading
-                    key={`heading-${group.id}`}
-                    groupName={group.name}
-                    groupId={group.id}
-                    editMode={editMode && role === "GM"}
-                    onRename={handleRenameGroup}
-                    onDelete={
-                      groups.length > 1
-                        ? () => handleDeleteGroup(group.id)
-                        : undefined
-                    }
-                  />
-                );
+                const otherGroups = groups.filter((g) => g.id !== group.id);
 
                 return (
                   <div key={group.id}>
-                    {index === 0 ? (
-                      heading
-                    ) : (
-                      <SortableWrapper groupId={group.id}>
-                        {heading}
-                      </SortableWrapper>
-                    )}
+                    <SortableWrapper
+                      groupId={group.id}
+                      editMode={editMode && role === "GM"}
+                    >
+                      {(dragHandleListeners) => (
+                        <EditableGroupHeading
+                          groupName={group.name}
+                          groupId={group.id}
+                          editMode={editMode && role === "GM"}
+                          onRename={handleRenameGroup}
+                          onDelete={
+                            groups.length > 1
+                              ? () => handleDeleteGroup(group.id)
+                              : undefined
+                          }
+                          onMerge={
+                            otherGroups.length > 0
+                              ? (targetId) =>
+                                  handleMergeGroup(group.id, targetId)
+                              : undefined
+                          }
+                          otherGroups={otherGroups}
+                          dragHandleListeners={dragHandleListeners}
+                        />
+                      )}
+                    </SortableWrapper>
 
                     <List sx={{ py: 0 }}>
                       {items.map((item) => (
@@ -568,129 +659,23 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
 // Wraps a group heading in a sortable container so items can be dragged over it
 const SortableWrapper = ({
   groupId,
+  editMode,
   children,
 }: {
   groupId: number;
-  children: React.ReactNode;
+  editMode: boolean;
+  children: (dragHandleListeners: Record<string, unknown>) => React.ReactNode;
 }) => {
-  const { attributes, setNodeRef, transform, transition } = useSortable({
-    id: getGroupDividerId(groupId),
-  });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: getGroupDividerId(groupId) });
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
     >
-      {children}
+      {children(editMode ? (listeners ?? {}) : {})}
     </div>
   );
 };
 
-type EditableGroupHeadingProps = {
-  groupName: string;
-  groupId: number;
-  editMode: boolean;
-  onRename: (id: number, name: string) => void;
-  onDelete?: () => void;
-};
-
-const EditableGroupHeading = ({
-  groupName,
-  groupId,
-  editMode,
-  onRename,
-  onDelete,
-}: EditableGroupHeadingProps) => {
-  const [editing, setEditing] = useState(false);
-  const [nameInput, setNameInput] = useState(groupName);
-
-  useEffect(() => {
-    setNameInput(groupName);
-  }, [groupName]);
-
-  const handleCommit = () => {
-    const trimmed = nameInput.trim();
-    if (trimmed && trimmed !== groupName) onRename(groupId, trimmed);
-    else setNameInput(groupName);
-    setEditing(false);
-  };
-
-  return (
-    <div
-      style={{
-        minHeight: 46,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "end",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          paddingLeft: 16,
-          paddingRight: 4,
-          paddingBottom: 2,
-          minHeight: 32,
-        }}
-      >
-        {editing ? (
-          <TextField
-            autoFocus
-            variant="standard"
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            onBlur={handleCommit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCommit();
-              if (e.key === "Escape") {
-                setNameInput(groupName);
-                setEditing(false);
-              }
-            }}
-            inputProps={{
-              style: {
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.08333em",
-                padding: 0,
-              },
-            }}
-            sx={{ flex: 1 }}
-            size="small"
-          />
-        ) : (
-          <Typography
-            variant="overline"
-            sx={{ color: "text.secondary", lineHeight: 1, flex: 1 }}
-          >
-            {groupName}
-          </Typography>
-        )}
-
-        {editMode && !editing && (
-          <Box sx={{ display: "flex", gap: 0 }}>
-            <IconButton
-              size="small"
-              onClick={() => setEditing(true)}
-              title="Rename group"
-            >
-              <EditNoteRoundedIcon fontSize="small" />
-            </IconButton>
-            {onDelete && (
-              <IconButton
-                size="small"
-                onClick={onDelete}
-                title="Delete group"
-              >
-                <CloseRoundedIcon fontSize="small" />
-              </IconButton>
-            )}
-          </Box>
-        )}
-      </div>
-      <Divider variant="fullWidth" />
-    </div>
-  );
-};

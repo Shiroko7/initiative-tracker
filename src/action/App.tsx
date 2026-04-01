@@ -100,7 +100,7 @@ export function App() {
                 item.metadata[getPluginId("metadata")] = {
                   count: `${count}`,
                   active: false,
-                  group: role === "GM" ? 1 : 0,
+                  group: 0,
                 };
                 count += 1;
               } else {

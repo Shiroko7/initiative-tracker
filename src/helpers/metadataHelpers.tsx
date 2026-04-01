@@ -12,8 +12,7 @@ export interface InitiativeGroup {
 }
 
 export const DEFAULT_INITIATIVE_GROUPS: InitiativeGroup[] = [
-  { id: 0, name: "Party" },
-  { id: 1, name: "Adversaries" },
+  { id: 0, name: "Group A" },
 ];
 
 export function readGroupsFromMetadata(metadata: Metadata): InitiativeGroup[] {
