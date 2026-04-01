@@ -1,13 +1,13 @@
 {
-  "name": "Pretty Sordid",
+  "name": "Pretty Sordid Fork",
   "version": "1.6.1",
   "manifest_version": 1,
-  "author": "Seamus Finlayson",
-  "homepage_url": "https://github.com/SeamusFinlayson/initiative-tracker",
+  "author": "Shiroko7",
+  "homepage_url": "https://github.com/Shiroko7/initiative-tracker",
   "icon": "/logo.png",
   "description": "Initiative tracking with token icons and a sort button!",
   "action": {
-    "title": "Pretty Sordid",
+    "title": "Pretty Sordid Fork",
     "icon": "/icon.svg",
     "popover": "/src/action/action.html",
     "height": 129,
