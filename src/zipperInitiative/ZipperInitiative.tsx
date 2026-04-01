@@ -6,6 +6,11 @@ import List from "@mui/material/List";
 import Box from "@mui/material/Box";
 
 import LoopRoundedIcon from "@mui/icons-material/LoopRounded";
+import ModeEditRoundedIcon from "@mui/icons-material/ModeEditRounded";
+import EditOffRoundedIcon from "@mui/icons-material/EditOffRounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 
 import OBR, { isImage, Item, Metadata } from "@owlbear-rodeo/sdk";
 
@@ -13,12 +18,16 @@ import { InitiativeItem } from "../components/InitiativeItem";
 
 import { getPluginId } from "../helpers/getPluginId";
 import { InitiativeHeader } from "../components/InitiativeHeader";
-import { Divider, Typography } from "@mui/material";
+import { Divider, TextField, Typography } from "@mui/material";
 import {
   DISABLE_NOTIFICATION_METADATA_ID,
   DISPLAY_ROUND_METADATA_ID,
+  GROUPS_METADATA_ID,
+  InitiativeGroup,
+  DEFAULT_INITIATIVE_GROUPS,
   PREVIOUS_STACK_METADATA_ID,
   readBooleanFromMetadata,
+  readGroupsFromMetadata,
   readNumberFromMetadata,
   readStringArrayFromMetadata,
   ROUND_COUNT_METADATA_ID,
@@ -28,8 +37,6 @@ import {
 import SettingsButton from "../settings/SettingsButton";
 import { InitiativeListItem } from "./InitiativeListItem";
 
-import ModeEditRoundedIcon from "@mui/icons-material/ModeEditRounded";
-import EditOffRoundedIcon from "@mui/icons-material/EditOffRounded";
 import { labelItem, removeLabel, selectItem } from "../helpers/findItem";
 import { writePreviousStackToScene } from "./previousStack";
 import {
@@ -50,9 +57,19 @@ import HeightMonitor from "../components/HeightMonitor";
 import { RoundControl } from "../components/RoundControl";
 import { broadcastRoundChangeEventMessage } from "../helpers/broadcastRoundImplementation";
 
+const DIVIDER_PREFIX = "GROUP_DIVIDER_";
+const getGroupDividerId = (groupId: number) => `${DIVIDER_PREFIX}${groupId}`;
+const isDivider = (id: string) =>
+  typeof id === "string" && id.startsWith(DIVIDER_PREFIX);
+const getDividerGroupId = (id: string) =>
+  parseInt(id.slice(DIVIDER_PREFIX.length));
+
 export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   const [initiativeItems, setInitiativeItems] = useState<InitiativeItem[]>([]);
   const [previousStack, setPreviousStack] = useState<string[]>([]);
+  const [groups, setGroups] = useState<InitiativeGroup[]>(
+    DEFAULT_INITIATIVE_GROUPS,
+  );
 
   const [roundCount, setRoundCount] = useState(1);
   const [displayRound, setDisplayRound] = useState(false);
@@ -75,6 +92,7 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
       setPreviousStack(
         readStringArrayFromMetadata(sceneMetadata, PREVIOUS_STACK_METADATA_ID),
       );
+      setGroups(readGroupsFromMetadata(sceneMetadata));
     };
     OBR.scene.getMetadata().then(handleSceneMetadataChange);
     return OBR.scene.onMetadataChange(handleSceneMetadataChange);
@@ -139,7 +157,9 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
     return OBR.scene.items.onChange(handleItems);
   }, []);
 
-  function guaranteeMinimumGroupIndices(newInitiativeItems: InitiativeItem[]) {
+  function guaranteeMinimumGroupIndices(
+    newInitiativeItems: InitiativeItem[],
+  ) {
     newInitiativeItems.sort(
       (a, b) =>
         (a.groupIndex === -1 ? newInitiativeItems.length : a.groupIndex) -
@@ -162,36 +182,71 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
     }
   }
 
+  function saveGroupsToScene(newGroups: InitiativeGroup[]) {
+    OBR.scene.setMetadata({
+      [getPluginId(GROUPS_METADATA_ID)]: newGroups,
+    });
+  }
+
+  function handleCreateGroup() {
+    const maxId = groups.reduce((max, g) => Math.max(max, g.id), -1);
+    const newGroup: InitiativeGroup = {
+      id: maxId + 1,
+      name: `Group ${groups.length + 1}`,
+    };
+    const newGroups = [...groups, newGroup];
+    setGroups(newGroups);
+    saveGroupsToScene(newGroups);
+  }
+
+  function handleRenameGroup(groupId: number, newName: string) {
+    const newGroups = groups.map((g) =>
+      g.id === groupId ? { ...g, name: newName } : g,
+    );
+    setGroups(newGroups);
+    saveGroupsToScene(newGroups);
+  }
+
+  function handleDeleteGroup(groupId: number) {
+    if (groups.length <= 1) return;
+    const targetGroupId = groups.find((g) => g.id !== groupId)!.id;
+
+    const affected = initiativeItems.filter((item) => item.group === groupId);
+    if (affected.length > 0) {
+      const newInitiativeItems = initiativeItems.map((item) =>
+        item.group === groupId
+          ? { ...item, group: targetGroupId, groupIndex: -1 }
+          : item,
+      );
+      guaranteeMinimumGroupIndices(newInitiativeItems);
+      setInitiativeItems(newInitiativeItems);
+      writeGroupDataToItems(newInitiativeItems);
+    }
+
+    const newGroups = groups.filter((g) => g.id !== groupId);
+    setGroups(newGroups);
+    saveGroupsToScene(newGroups);
+  }
+
   function handleReadyChange(id: string, ready: boolean, previousId: string) {
     const isNewActive = !ready;
-    // Set local items immediately and update previous stack
     setInitiativeItems((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          // Highlight ready item on map
           if (selectActiveItem === 1 && isNewActive) selectItem(item.id);
           if (selectActiveItem === 2 && isNewActive) labelItem(item.id);
-
-          // Update item locally
-          return {
-            ...item,
-            ready: ready,
-            active: isNewActive,
-          };
+          return { ...item, ready: ready, active: isNewActive };
         } else {
-          // Update item locally
           return { ...item, active: false };
         }
       }),
     );
 
     if (isNewActive) {
-      // Record that this item went at this point
       const newPreviousStack = [...previousStack, id];
       setPreviousStack(newPreviousStack);
       writePreviousStackToScene(newPreviousStack);
     } else {
-      // Restore previous initiative item
       const newPreviousStack = previousStack.slice(0, -1);
       setPreviousStack(newPreviousStack);
       writePreviousStackToScene(newPreviousStack);
@@ -207,7 +262,6 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
       );
     }
 
-    // Sync item changes over the network
     OBR.scene.items.updateItems(
       initiativeItems.map((item) => item.id),
       (items) => {
@@ -243,11 +297,9 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
       }
     }
 
-    // Clear previous stack
     setPreviousStack([]);
     writePreviousStackToScene([]);
 
-    // Set local items immediately
     setInitiativeItems(
       initiativeItems.map((item) => ({
         ...item,
@@ -256,7 +308,6 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
       })),
     );
 
-    // Update the scene items with the new active status
     OBR.scene.items.updateItems(
       initiativeItems.map((init) => init.id),
       (items) => {
@@ -271,21 +322,23 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
       },
     );
 
-    // Remove your turn label
     if (selectActiveItem == 2) removeLabel();
   }
 
-  const partyItems = initiativeItems.filter((item) => item.group === 0);
-  const enemyItems = initiativeItems.filter((item) => item.group === 1);
-  const adversariesDividerId = getGroupDividerId("Adversaries");
-  const sortableItems = [
-    ...partyItems.map((item) => item.id),
-    adversariesDividerId,
-    ...enemyItems.map((item) => item.id),
-  ];
+  // Build per-group item lists sorted by groupIndex
+  const groupedItems = groups.map((group) => ({
+    group,
+    items: initiativeItems
+      .filter((item) => item.group === group.id)
+      .sort((a, b) => a.groupIndex - b.groupIndex),
+  }));
 
-  const allEnemiesHidden =
-    enemyItems.filter((item) => item.visible).length === 0;
+  // Build flat sortable list: group0Items, divider_1, group1Items, divider_2, ...
+  const sortableItems: string[] = [];
+  for (let i = 0; i < groupedItems.length; i++) {
+    if (i > 0) sortableItems.push(getGroupDividerId(groupedItems[i].group.id));
+    sortableItems.push(...groupedItems[i].items.map((item) => item.id));
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -300,40 +353,47 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
       collisionDetection={closestCenter}
       onDragEnd={(event) => {
         const { active, over } = event;
-
-        // Return early if  active is over itself
         if (!over?.id || active.id === over.id) return;
 
         const activeItem = initiativeItems.find(
           (item) => item.id === active.id,
         );
-        if (activeItem === undefined) throw "error invalid items";
+        if (activeItem === undefined) return;
+
         const activeIndex = sortableItems.findIndex((id) => id === active.id);
         const overIndex = sortableItems.findIndex((id) => id === over.id);
-        const groupDividerIndex = sortableItems.findIndex(
-          (id) => id === adversariesDividerId,
-        );
-
         const newInitiativeItems = [...initiativeItems];
+        const overId = over.id as string;
 
-        if (overIndex === groupDividerIndex) {
-          // handle item is dragged over group divider
-          if (activeIndex < groupDividerIndex) {
-            activeItem.group = 1;
+        if (isDivider(overId)) {
+          // Dragged over a group divider boundary
+          const targetGroupId = getDividerGroupId(overId);
+          const targetGroupArrayIdx = groups.findIndex(
+            (g) => g.id === targetGroupId,
+          );
+
+          if (activeIndex < overIndex) {
+            // Active item is before this divider → move to group after divider
+            activeItem.group = targetGroupId;
             activeItem.groupIndex = -2;
           } else {
-            activeItem.group = 0;
-            activeItem.groupIndex = partyItems.length;
+            // Active item is after this divider → move to end of group before divider
+            const prevGroupId = groups[targetGroupArrayIdx - 1].id;
+            const prevGroupCount = initiativeItems.filter(
+              (item) => item.group === prevGroupId && item.id !== activeItem.id,
+            ).length;
+            activeItem.group = prevGroupId;
+            activeItem.groupIndex = prevGroupCount;
           }
         } else {
           const overItem = initiativeItems.find((item) => item.id === over.id);
-          if (overItem === undefined) throw "error invalid items";
+          if (overItem === undefined) return;
 
           const overGroupIndex = overItem.groupIndex;
           if (overItem.group === activeItem.group) {
-            // handle item is dragged to same group
+            // Same group reorder
             newInitiativeItems.forEach((item) => {
-              if (item.id !== activeItem.id && item.group === overItem.group)
+              if (item.id !== activeItem.id && item.group === overItem.group) {
                 if (
                   item.groupIndex > activeItem.groupIndex &&
                   item.groupIndex <= overGroupIndex
@@ -345,20 +405,22 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                 ) {
                   item.groupIndex++;
                 }
+              }
             });
             activeItem.groupIndex = overGroupIndex;
           } else {
-            // handle item is dragged to different group
+            // Cross-group move
             newInitiativeItems.forEach((item) => {
-              if (item.id !== activeItem.id && item.group === overItem.group)
+              if (item.id !== activeItem.id && item.group === overItem.group) {
                 if (item.groupIndex > overGroupIndex) {
                   item.groupIndex++;
                 }
+              }
             });
             activeItem.group = overItem.group;
-            if (activeIndex < overIndex)
+            if (activeIndex < overIndex) {
               activeItem.groupIndex = overGroupIndex + 1;
-            else {
+            } else {
               activeItem.groupIndex = overGroupIndex;
               overItem.groupIndex++;
             }
@@ -375,7 +437,17 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
           <InitiativeHeader
             action={
               <>
-                {role === "GM" && <SettingsButton></SettingsButton>}
+                {role === "GM" && <SettingsButton />}
+
+                {role === "GM" && editMode && (
+                  <IconButton
+                    onClick={handleCreateGroup}
+                    title="Add group"
+                    size="small"
+                  >
+                    <AddRoundedIcon />
+                  </IconButton>
+                )}
 
                 {editMode ? (
                   <IconButton onClick={() => setEditMode(false)}>
@@ -404,77 +476,79 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                 OBR.action.setHeight(height + 64 + 2 + (displayRound ? 54 : 0))
               }
             >
-              <GroupHeading groupName="Party" />
+              {groupedItems.map(({ group, items }, index) => {
+                const allHidden =
+                  items.filter((item) => item.visible).length === 0;
+                const isEmpty = items.length === 0;
+                const showHint = isEmpty || (allHidden && role !== "GM");
 
-              <GroupHint
-                visible={partyItems.length === 0}
-                hintText={
-                  Math.random() < 0.1 &&
-                  enemyItems.length !== 0 &&
-                  !allEnemiesHidden
-                    ? "I need a hero!"
-                    : "The party seems to be empty..."
-                }
-              />
-
-              <List sx={{ py: 0 }}>
-                {partyItems.map((item) => (
-                  <InitiativeListItem
-                    key={item.id}
-                    item={item}
-                    onReadyChange={(ready) => {
-                      handleReadyChange(
-                        item.id,
-                        ready,
-                        previousStack.length > 1
-                          ? (previousStack.at(
-                              previousStack.length - 2,
-                            ) as string)
-                          : "",
-                      );
-                    }}
-                    showHidden={role === "GM"}
-                    edit={editMode}
-                    selected={selection.includes(item.id)}
+                const heading = (
+                  <EditableGroupHeading
+                    key={`heading-${group.id}`}
+                    groupName={group.name}
+                    groupId={group.id}
+                    editMode={editMode && role === "GM"}
+                    onRename={handleRenameGroup}
+                    onDelete={
+                      groups.length > 1
+                        ? () => handleDeleteGroup(group.id)
+                        : undefined
+                    }
                   />
-                ))}
-              </List>
+                );
 
-              <SortableGroupHeading groupName="Adversaries" />
-              <List sx={{ py: 0 }}>
-                {enemyItems.map((item) => (
-                  <InitiativeListItem
-                    key={item.id}
-                    item={item}
-                    onReadyChange={(ready) => {
-                      handleReadyChange(
-                        item.id,
-                        ready,
-                        previousStack.length > 1
-                          ? (previousStack.at(
-                              previousStack.length - 2,
-                            ) as string)
-                          : "",
-                      );
-                    }}
-                    showHidden={role === "GM"}
-                    edit={editMode}
-                    selected={selection.includes(item.id)}
-                  />
-                ))}
-              </List>
-              <GroupHint
-                visible={
-                  enemyItems.length === 0 || (allEnemiesHidden && role !== "GM")
-                }
-                hintText={
-                  partyItems.length === 0
-                    ? "The action must be elsewhere..."
-                    : "The party stands uncontested"
-                }
-              />
+                return (
+                  <div key={group.id}>
+                    {index === 0 ? (
+                      heading
+                    ) : (
+                      <SortableWrapper groupId={group.id}>
+                        {heading}
+                      </SortableWrapper>
+                    )}
+
+                    <List sx={{ py: 0 }}>
+                      {items.map((item) => (
+                        <InitiativeListItem
+                          key={item.id}
+                          item={item}
+                          onReadyChange={(ready) => {
+                            handleReadyChange(
+                              item.id,
+                              ready,
+                              previousStack.length > 1
+                                ? (previousStack.at(
+                                    previousStack.length - 2,
+                                  ) as string)
+                                : "",
+                            );
+                          }}
+                          showHidden={role === "GM"}
+                          edit={editMode}
+                          selected={selection.includes(item.id)}
+                        />
+                      ))}
+                    </List>
+
+                    {showHint && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          px: 2,
+                          py: 1,
+                          display: "inline-block",
+                          color: "text.secondary",
+                        }}
+                      >
+                        {isEmpty ? `${group.name} is empty` : "All hidden"}
+                      </Typography>
+                    )}
+                  </div>
+                );
+              })}
             </HeightMonitor>
           </Box>
+
           {displayRound && (
             <div className="grid place-items-center py-2">
               <RoundControl
@@ -491,10 +565,57 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   );
 }
 
-type GroupHeadingProps = {
-  groupName: string;
+// Wraps a group heading in a sortable container so items can be dragged over it
+const SortableWrapper = ({
+  groupId,
+  children,
+}: {
+  groupId: number;
+  children: React.ReactNode;
+}) => {
+  const { attributes, setNodeRef, transform, transition } = useSortable({
+    id: getGroupDividerId(groupId),
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+    >
+      {children}
+    </div>
+  );
 };
-const GroupHeading = ({ groupName }: GroupHeadingProps) => {
+
+type EditableGroupHeadingProps = {
+  groupName: string;
+  groupId: number;
+  editMode: boolean;
+  onRename: (id: number, name: string) => void;
+  onDelete?: () => void;
+};
+
+const EditableGroupHeading = ({
+  groupName,
+  groupId,
+  editMode,
+  onRename,
+  onDelete,
+}: EditableGroupHeadingProps) => {
+  const [editing, setEditing] = useState(false);
+  const [nameInput, setNameInput] = useState(groupName);
+
+  useEffect(() => {
+    setNameInput(groupName);
+  }, [groupName]);
+
+  const handleCommit = () => {
+    const trimmed = nameInput.trim();
+    if (trimmed && trimmed !== groupName) onRename(groupId, trimmed);
+    else setNameInput(groupName);
+    setEditing(false);
+  };
+
   return (
     <div
       style={{
@@ -504,59 +625,72 @@ const GroupHeading = ({ groupName }: GroupHeadingProps) => {
         justifyContent: "end",
       }}
     >
-      <Typography
-        variant="overline"
-        sx={{
-          px: 2,
-          py: 0.5,
-          display: "inline-block",
-          color: "text.secondary",
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          paddingLeft: 16,
+          paddingRight: 4,
+          paddingBottom: 2,
+          minHeight: 32,
         }}
       >
-        {groupName}
-      </Typography>
+        {editing ? (
+          <TextField
+            autoFocus
+            variant="standard"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onBlur={handleCommit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCommit();
+              if (e.key === "Escape") {
+                setNameInput(groupName);
+                setEditing(false);
+              }
+            }}
+            inputProps={{
+              style: {
+                fontSize: "0.75rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.08333em",
+                padding: 0,
+              },
+            }}
+            sx={{ flex: 1 }}
+            size="small"
+          />
+        ) : (
+          <Typography
+            variant="overline"
+            sx={{ color: "text.secondary", lineHeight: 1, flex: 1 }}
+          >
+            {groupName}
+          </Typography>
+        )}
 
+        {editMode && !editing && (
+          <Box sx={{ display: "flex", gap: 0 }}>
+            <IconButton
+              size="small"
+              onClick={() => setEditing(true)}
+              title="Rename group"
+            >
+              <EditNoteRoundedIcon fontSize="small" />
+            </IconButton>
+            {onDelete && (
+              <IconButton
+                size="small"
+                onClick={onDelete}
+                title="Delete group"
+              >
+                <CloseRoundedIcon fontSize="small" />
+              </IconButton>
+            )}
+          </Box>
+        )}
+      </div>
       <Divider variant="fullWidth" />
-    </div>
-  );
-};
-
-const GroupHint = ({
-  visible,
-  hintText,
-}: {
-  visible: boolean;
-  hintText: string;
-}) => {
-  if (!visible) return null;
-  return (
-    <Typography
-      variant="caption"
-      sx={{
-        px: 2,
-        py: 1,
-        display: "inline-block",
-        color: "text.secondary",
-      }}
-    >
-      {hintText}
-    </Typography>
-  );
-};
-
-const getGroupDividerId = (groupName: string) => `${groupName}_GROUP_DIVIDER`;
-const SortableGroupHeading = (groupHeadingProps: GroupHeadingProps) => {
-  const { attributes, setNodeRef, transform, transition } = useSortable({
-    id: getGroupDividerId(groupHeadingProps.groupName),
-  });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div ref={setNodeRef} style={{ ...style }} {...attributes}>
-      <GroupHeading {...groupHeadingProps} />
     </div>
   );
 };

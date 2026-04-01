@@ -79,9 +79,7 @@ export function InitiativeListItem({
               value={item.count}
               onChange={(e) => onReadyChange(e.target.checked)}
               onDoubleClick={(e) => e.stopPropagation()}
-              disabled={
-                (item.group === 1 && !roleIsGm) || (!item.active && !item.ready)
-              }
+              disabled={!item.active && !item.ready}
             />
           )}
         </>

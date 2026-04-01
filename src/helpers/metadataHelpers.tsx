@@ -4,6 +4,32 @@ import { getPluginId } from "./getPluginId";
 // scene metadata
 export const ROUND_COUNT_METADATA_ID = "roundCount";
 export const PREVIOUS_STACK_METADATA_ID = "previousStack";
+export const GROUPS_METADATA_ID = "groups";
+
+export interface InitiativeGroup {
+  id: number;
+  name: string;
+}
+
+export const DEFAULT_INITIATIVE_GROUPS: InitiativeGroup[] = [
+  { id: 0, name: "Party" },
+  { id: 1, name: "Adversaries" },
+];
+
+export function readGroupsFromMetadata(metadata: Metadata): InitiativeGroup[] {
+  const value = metadata[getPluginId(GROUPS_METADATA_ID)];
+  if (!Array.isArray(value) || value.length === 0)
+    return DEFAULT_INITIATIVE_GROUPS;
+  const groups = (value as unknown[]).filter(
+    (g) =>
+      g !== null &&
+      typeof g === "object" &&
+      typeof (g as Record<string, unknown>).id === "number" &&
+      typeof (g as Record<string, unknown>).name === "string",
+  );
+  if (groups.length === 0) return DEFAULT_INITIATIVE_GROUPS;
+  return groups as InitiativeGroup[];
+}
 
 // room metadata
 export const SORT_ASCENDING_METADATA_ID = "sortAscending";
