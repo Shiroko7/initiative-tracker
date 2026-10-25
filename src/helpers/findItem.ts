@@ -16,10 +16,15 @@ export async function focusItem(itemId: string) {
   // Select this item
   await selectItem(itemId);
 
-  // Focus on this item
+  await panToItem(itemId);
+}
 
+/** Center the viewport on one or more items without changing the selection. */
+export async function panToItem(itemIds: string | string[]) {
   // Convert the center of the selected item to screen-space
-  const bounds = await OBR.scene.items.getItemBounds([itemId]);
+  const bounds = await OBR.scene.items.getItemBounds(
+    typeof itemIds === "string" ? [itemIds] : itemIds,
+  );
   const boundsAbsoluteCenter = await OBR.viewport.transformPoint(bounds.center);
 
   // Get the center of the viewport in screen-space

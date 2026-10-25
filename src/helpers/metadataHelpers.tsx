@@ -37,6 +37,7 @@ export const DISPLAY_ROUND_METADATA_ID = "displayRound";
 export const DISABLE_NOTIFICATION_METADATA_ID = "disableNotifications";
 export const ZIPPER_INITIATIVE_ENABLED_METADATA_ID = "zipperEnabled";
 export const SELECT_ACTIVE_ITEM_METADATA_ID = "selectActive";
+export const SHARED_TURNS_METADATA_ID = "sharedTurns";
 
 export function readBooleanFromMetadata(
   metadata: Metadata,

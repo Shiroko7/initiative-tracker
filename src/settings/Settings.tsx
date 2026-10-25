@@ -1,4 +1,4 @@
-import { Divider, MenuItem, Select, Switch, Typography } from "@mui/material";
+import { Button, Divider, MenuItem, Select, Switch, Typography } from "@mui/material";
 import OBR, { Metadata, Player } from "@owlbear-rodeo/sdk";
 import { useEffect, useState } from "react";
 import { getPluginId } from "../helpers/getPluginId";
@@ -7,6 +7,7 @@ import {
   DISABLE_NOTIFICATION_METADATA_ID,
   DISPLAY_ROUND_METADATA_ID,
   SELECT_ACTIVE_ITEM_METADATA_ID,
+  SHARED_TURNS_METADATA_ID,
   SORT_ASCENDING_METADATA_ID,
   ZIPPER_INITIATIVE_ENABLED_METADATA_ID,
   readBooleanFromMetadata,
@@ -14,19 +15,22 @@ import {
 } from "../helpers/metadataHelpers";
 
 import "../tailwind.css";
-import { cn } from "../helpers/utils";
 import LinkButton from "./LinkButton";
+import { SettingsRow, SubSettingsRow } from "./SettingsRows";
 import { Patreon } from "../assets/Patreon";
 import { Bug } from "../assets/bug";
 import { QuestionMark } from "../assets/QuestionMark";
 import { History } from "../assets/History";
 import { removeLabel } from "../helpers/findItem";
 import addThemeToBody from "../helpers/addThemeToBody";
+import { openPlayerPreferences } from "../helpers/playerPreferences";
 
 export default function Settings(): JSX.Element {
   // General settings
   const [selectActiveItem, setSelectActiveItem] = useState(0);
   const [zipperInitiativeEnabled, setZipperInitiativeEnabled] = useState(false);
+
+  const [sharedTurns, setSharedTurns] = useState(true);
 
   // Classic Initiative Settings
   const [sortAscending, setSortAscending] = useState(false);
@@ -81,6 +85,13 @@ export default function Settings(): JSX.Element {
           roomMetadata,
           SELECT_ACTIVE_ITEM_METADATA_ID,
           selectActiveItem,
+        ),
+      );
+      setSharedTurns(
+        readBooleanFromMetadata(
+          roomMetadata,
+          SHARED_TURNS_METADATA_ID,
+          sharedTurns,
         ),
       );
       setInitializationDone(true);
@@ -197,6 +208,26 @@ export default function Settings(): JSX.Element {
               />
             </div>
 
+            <div className="mb-1 mt-4">
+              <Typography>Turn Display</Typography>
+            </div>
+            <div className="flex flex-col gap-2">
+              <SettingsRow
+                label="Display Preferences"
+                description="The turn carousel, camera follow and turn markers are set by each player for themselves"
+                action={
+                  <Button
+                    color="secondary"
+                    variant="outlined"
+                    size="small"
+                    onClick={openPlayerPreferences}
+                  >
+                    Open
+                  </Button>
+                }
+              />
+            </div>
+
             {!zipperInitiativeEnabled && (
               <>
                 <div className="mb-1 mt-4">
@@ -224,6 +255,23 @@ export default function Settings(): JSX.Element {
                         <MenuItem value="false">Descending</MenuItem>
                         <MenuItem value="true">Ascending</MenuItem>
                       </Select>
+                    }
+                  />
+
+                  <SettingsRow
+                    label="Shared Turns"
+                    description="Tokens in the same group with the same initiative take their turn together"
+                    action={
+                      <Switch
+                        color="secondary"
+                        checked={sharedTurns}
+                        onChange={(_e, value) => {
+                          setSharedTurns(value);
+                          OBR.room.setMetadata({
+                            [getPluginId(SHARED_TURNS_METADATA_ID)]: value,
+                          });
+                        }}
+                      />
                     }
                   />
 
@@ -333,77 +381,6 @@ export default function Settings(): JSX.Element {
             )}
           </>
         )}
-      </div>
-    </div>
-  );
-}
-
-function SettingsRow({
-  label,
-  description,
-  action,
-  children,
-  last,
-}: {
-  label: string;
-  description: string;
-  action: JSX.Element;
-  children?: JSX.Element | JSX.Element[];
-  last?: boolean;
-}): JSX.Element {
-  return (
-    <div>
-      <div
-        className={cn(
-          "flex min-h-16 items-center justify-start gap-4 rounded bg-gray-50 p-2 pl-3 dark:bg-gray-700/65",
-          { "rounded-b-none": last },
-        )}
-      >
-        <div>
-          <label htmlFor="">{label}</label>
-          <div className="text-xs text-gray-400">{description}</div>
-        </div>
-        <div className="ml-auto">{action}</div>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SubSettingsRow({
-  label,
-  description,
-  action,
-  last,
-  collapseElement,
-}: {
-  label: string;
-  description?: string;
-  action: JSX.Element;
-  last?: boolean;
-  collapseElement: boolean;
-}): JSX.Element {
-  return (
-    <div
-      {...{ inert: collapseElement ? "" : undefined }} // type script react does not recognize inert
-      className={cn("transition-max-height overflow-clip duration-300", {
-        "max-h-60 ease-in": !collapseElement,
-        "max-h-0 ease-out": collapseElement,
-      })}
-    >
-      <div className="pt-0.5">
-        <div
-          className={cn(
-            "flex items-center justify-start gap-4 rounded-none bg-gray-50 p-2 pl-6 dark:bg-gray-700/70",
-            { "rounded-b": last },
-          )}
-        >
-          <div>
-            <label htmlFor="">{label}</label>
-            <div className="text-xs text-gray-400">{description}</div>
-          </div>
-          <div className="ml-auto">{action}</div>
-        </div>
       </div>
     </div>
   );

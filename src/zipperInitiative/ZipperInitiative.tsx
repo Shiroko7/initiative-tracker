@@ -35,6 +35,7 @@ import {
   updateRoundCount,
 } from "../helpers/metadataHelpers";
 import SettingsButton from "../settings/SettingsButton";
+import PreferencesButton from "../preferences/PreferencesButton";
 import { InitiativeListItem } from "./InitiativeListItem";
 
 import { labelItem, removeLabel, selectItem } from "../helpers/findItem";
@@ -514,6 +515,7 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
             action={
               <>
                 {role === "GM" && <SettingsButton />}
+                <PreferencesButton />
 
                 {role === "GM" && editMode && (
                   <IconButton

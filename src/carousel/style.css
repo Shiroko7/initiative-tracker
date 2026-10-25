@@ -1,0 +1,11 @@
+html,
+body {
+  background: transparent;
+}
+
+.carousel-scroll {
+  scrollbar-width: none;
+}
+.carousel-scroll::-webkit-scrollbar {
+  display: none;
+}

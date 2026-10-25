@@ -32,13 +32,14 @@ import {
   readNumberFromMetadata,
   ROUND_COUNT_METADATA_ID,
   SELECT_ACTIVE_ITEM_METADATA_ID,
+  SHARED_TURNS_METADATA_ID,
   SORT_ASCENDING_METADATA_ID,
   updateRoundCount,
 } from "../helpers/metadataHelpers";
 import SortAscendingIcon from "../assets/SortAscendingIcon";
 import SortDescendingIcon from "../assets/SortDescendingIcon";
 import SettingsButton from "../settings/SettingsButton";
-import { labelItem, selectItem } from "../helpers/findItem";
+import { labelItem } from "../helpers/findItem";
 import useSelection from "../helpers/useSelection";
 import HeightMonitor from "../components/HeightMonitor";
 import { RoundControl } from "../components/RoundControl";
@@ -46,6 +47,12 @@ import { broadcastRoundChangeEventMessage } from "../helpers/broadcastRoundImple
 import { EditableGroupHeading } from "../components/EditableGroupHeading";
 import writeGroupDataToItems from "../zipperInitiative/writeGroupDataToItems";
 import isMetadata from "../zipperInitiative/isMetadata";
+import { advanceTurn } from "../helpers/turnControls";
+import {
+  findActiveSlotIndex,
+  orderTurnSlots,
+} from "../helpers/initiativeOrder";
+import PreferencesButton from "../preferences/PreferencesButton";
 
 import {
   closestCenter,
@@ -74,6 +81,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
   const [advancedControls, setAdvancedControls] = useState(false);
   const [displayRound, setDisplayRound] = useState(false);
   const [disableNotifications, setDisableNotifications] = useState(false);
+  const [sharedTurns, setSharedTurns] = useState(true);
 
   // Initiative
   const [initiativeItems, setInitiativeItems] = useState<InitiativeItem[]>([]);
@@ -141,6 +149,13 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
           roomMetadata,
           SELECT_ACTIVE_ITEM_METADATA_ID,
           selectActiveItem,
+        ),
+      );
+      setSharedTurns(
+        readBooleanFromMetadata(
+          roomMetadata,
+          SHARED_TURNS_METADATA_ID,
+          sharedTurns,
         ),
       );
     };
@@ -292,7 +307,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
     saveGroupsToScene(newGroups);
   }
 
-  // Sort each group independently by count value, first item in first group becomes active
+  // Sort each group independently by count value, first turn in first group becomes active
   function handleSortClick() {
     const newItems = initiativeItems.map((item) => ({ ...item }));
 
@@ -309,25 +324,28 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
       });
     }
 
-    // Flat ordered list across all groups
-    const ordered = flatOrdered(newItems);
+    // Turns across all groups, tied tokens share a turn
+    const slots = orderTurnSlots(newItems, groups, sharedTurns);
+    const firstSlotIds = (slots[0] ?? []).map((item) => item.id);
 
-    // Increment round if active item was last
-    if (initiativeItems.length > 1) {
-      const activeIndex = ordered.findIndex((item) => item.active);
-      if (activeIndex >= ordered.length - 1) {
+    // Increment round if active turn was last
+    if (slots.length > 1) {
+      const activeIndex = findActiveSlotIndex(slots);
+      if (activeIndex >= slots.length - 1) {
         const newRoundCount = roundCount + 1;
         updateRoundCount(newRoundCount, setRoundCount);
         broadcastRoundChangeEventMessage(newRoundCount);
       }
     }
 
-    const updatedItems = newItems.map((item) => {
-      const isFirst = ordered[0]?.id === item.id;
-      if (selectActiveItem === 1 && isFirst) selectItem(item.id);
-      if (selectActiveItem === 2 && isFirst) labelItem(item.id);
-      return { ...item, active: isFirst };
-    });
+    if (selectActiveItem === 1 && firstSlotIds.length > 0)
+      OBR.player.select(firstSlotIds);
+    if (selectActiveItem === 2 && firstSlotIds.length > 0)
+      labelItem(firstSlotIds[0]);
+    const updatedItems = newItems.map((item) => ({
+      ...item,
+      active: firstSlotIds.includes(item.id),
+    }));
 
     setInitiativeItems(updatedItems);
 
@@ -349,61 +367,8 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
     );
   }
 
-  function flatOrdered(items: InitiativeItem[]) {
-    return groups.flatMap((group) =>
-      items
-        .filter((item) => item.group === group.id)
-        .sort((a, b) => a.groupIndex - b.groupIndex),
-    );
-  }
-
   function handleDirectionClick(next = true) {
-    const ordered = flatOrdered(initiativeItems);
-    let newIndex =
-      ordered.findIndex((item) => item.active) + (next ? 1 : -1);
-
-    if (newIndex < 0) {
-      newIndex = ordered.length + newIndex;
-      if (advancedControls && displayRound && roundCount > 1) {
-        const newRoundCount = roundCount - 1;
-        updateRoundCount(newRoundCount, setRoundCount);
-        broadcastRoundChangeEventMessage(newRoundCount);
-      } else {
-        broadcastRoundChangeEventMessage(null);
-      }
-    } else if (newIndex >= ordered.length) {
-      newIndex = newIndex % ordered.length;
-      if (advancedControls && displayRound) {
-        const newRoundCount = roundCount + 1;
-        updateRoundCount(newRoundCount, setRoundCount);
-        broadcastRoundChangeEventMessage(newRoundCount);
-      } else {
-        broadcastRoundChangeEventMessage(null);
-      }
-    }
-
-    const targetId = ordered[newIndex]?.id;
-
-    setInitiativeItems((prev) =>
-      prev.map((item) => {
-        const active = item.id === targetId;
-        if (selectActiveItem === 1 && active) selectItem(item.id);
-        if (selectActiveItem === 2 && active) labelItem(item.id);
-        return { ...item, active };
-      }),
-    );
-
-    OBR.scene.items.updateItems(
-      initiativeItems.map((i) => i.id),
-      (items) => {
-        for (const item of items) {
-          const metadata = item.metadata[getPluginId("metadata")];
-          if (isMetadata(metadata)) {
-            metadata.active = item.id === targetId;
-          }
-        }
-      },
-    );
+    advanceTurn(next);
   }
 
   function handleInitiativeCountChange(id: string, newCount: string) {
@@ -448,6 +413,10 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
   );
 
   const themeIsDark = useTheme().palette.mode === "dark";
+
+  // Only the GM moves the turn; players still see the round if it's shown
+  const isGM = role === "GM";
+  const showControlBar = advancedControls && (isGM || displayRound);
 
   return (
     <DndContext
@@ -560,6 +529,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
             action={
               <>
                 {role === "GM" && <SettingsButton />}
+                <PreferencesButton />
 
                 {role === "GM" && editMode && (
                   <IconButton
@@ -590,17 +560,19 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                   </IconButton>
                 )}
 
-                <IconButton onClick={handleSortClick}>
-                  <Icon>
-                    {sortAscending ? (
-                      <SortAscendingIcon darkMode={themeIsDark} />
-                    ) : (
-                      <SortDescendingIcon darkMode={themeIsDark} />
-                    )}
-                  </Icon>
-                </IconButton>
+                {isGM && (
+                  <IconButton onClick={handleSortClick}>
+                    <Icon>
+                      {sortAscending ? (
+                        <SortAscendingIcon darkMode={themeIsDark} />
+                      ) : (
+                        <SortDescendingIcon darkMode={themeIsDark} />
+                      )}
+                    </Icon>
+                  </IconButton>
+                )}
 
-                {!advancedControls && (
+                {isGM && !advancedControls && (
                   <IconButton
                     aria-label="next"
                     onClick={() => handleDirectionClick()}
@@ -617,7 +589,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
             <HeightMonitor
               onChange={(height) =>
                 OBR.action.setHeight(
-                  66 + Math.max(64, height) + (advancedControls ? 56 : 0),
+                  66 + Math.max(64, height) + (showControlBar ? 56 : 0),
                 )
               }
             >
@@ -692,7 +664,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
             </HeightMonitor>
           </Box>
 
-          {advancedControls && (
+          {showControlBar && (
             <Box
               sx={{
                 p: 1,
@@ -713,13 +685,15 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                   display: "inline-flex",
                 }}
               >
-                <IconButton
-                  aria-label="previous"
-                  onClick={() => handleDirectionClick(false)}
-                  disabled={initiativeItems.length === 0}
-                >
-                  <SkipPreviousRoundedIcon />
-                </IconButton>
+                {isGM && (
+                  <IconButton
+                    aria-label="previous"
+                    onClick={() => handleDirectionClick(false)}
+                    disabled={initiativeItems.length === 0}
+                  >
+                    <SkipPreviousRoundedIcon />
+                  </IconButton>
+                )}
                 {displayRound && (
                   <RoundControl
                     playerRole={role}
@@ -728,13 +702,15 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                     disableNotifications={disableNotifications}
                   />
                 )}
-                <IconButton
-                  aria-label="next"
-                  onClick={() => handleDirectionClick()}
-                  disabled={initiativeItems.length === 0}
-                >
-                  <SkipNextRounded />
-                </IconButton>
+                {isGM && (
+                  <IconButton
+                    aria-label="next"
+                    onClick={() => handleDirectionClick()}
+                    disabled={initiativeItems.length === 0}
+                  >
+                    <SkipNextRounded />
+                  </IconButton>
+                )}
               </Box>
             </Box>
           )}

@@ -10,6 +10,9 @@ export default defineConfig({
       input: {
         action: resolve(__dirname, "src/action/action.html"),
         settings: resolve(__dirname, "src/settings/settings.html"),
+        carousel: resolve(__dirname, "src/carousel/carousel.html"),
+        preferences: resolve(__dirname, "src/preferences/preferences.html"),
+        background: resolve(__dirname, "background.html"),
       },
     },
   },

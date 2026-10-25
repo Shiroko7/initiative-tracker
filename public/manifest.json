@@ -6,6 +6,7 @@
   "homepage_url": "https://github.com/Shiroko7/initiative-tracker",
   "icon": "/logo.png",
   "description": "Initiative tracking with token icons and a sort button!",
+  "background_url": "/background.html",
   "action": {
     "title": "Pretty Sordid Fork",
     "icon": "/icon.svg",
