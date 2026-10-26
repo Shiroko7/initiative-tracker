@@ -20,10 +20,9 @@ import {
   ZIPPER_INITIATIVE_ENABLED_METADATA_ID,
 } from "../helpers/metadataHelpers";
 import {
-  buildTurnSlots,
   findNextSlot,
+  orderGroupedTurnSlots,
   parseInitiativeItems,
-  segmentInitiativeItems,
   TurnSlot,
 } from "../helpers/initiativeOrder";
 import { advanceTurn } from "../helpers/turnControls";
@@ -130,14 +129,10 @@ export function Carousel() {
   const showTurnControls = role === "GM" && !zipper;
 
   const canSee = (item: InitiativeItem) => role === "GM" || item.visible;
-  const groupedSlots = segmentInitiativeItems(
+  const groupedSlots = orderGroupedTurnSlots(
     parseInitiativeItems(sceneItems, zipper),
     readGroupsFromMetadata(sceneMetadata),
-  ).flatMap((segment) =>
-    buildTurnSlots(segment.items, sharedTurns).map((slot) => ({
-      group: segment.group,
-      slot,
-    })),
+    sharedTurns,
   );
   const allSlots = groupedSlots.map(({ slot }) => slot);
   const activeIds = new Set(

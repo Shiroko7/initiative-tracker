@@ -11,12 +11,28 @@ import { ZipperInitiative } from "../zipperInitiative/ZipperInitiative";
 import { getPluginId } from "../helpers/getPluginId";
 import addThemeToBody from "../helpers/addThemeToBody";
 import { useTheme } from "@mui/material";
+import {
+  linkTurn,
+  removeFromInitiative,
+  unlinkTurn,
+} from "../helpers/linkedTurns";
 
 const addIcon = new URL("../assets/add.svg#icon", import.meta.url).toString();
 const removeIcon = new URL(
   "../assets/remove.svg#icon",
   import.meta.url,
 ).toString();
+const linkIcon = new URL("../assets/link.svg#icon", import.meta.url).toString();
+const unlinkIcon = new URL(
+  "../assets/unlink.svg#icon",
+  import.meta.url,
+).toString();
+
+const TOKEN_FILTER = [
+  { key: "layer", value: "CHARACTER", coordinator: "||" },
+  { key: "layer", value: "MOUNT" },
+  { key: "type", value: "IMAGE" },
+] as const;
 
 export function App() {
   const [sceneReady, setSceneReady] = useState(false);
@@ -63,9 +79,7 @@ export function App() {
             label: "Add to Initiative",
             filter: {
               every: [
-                { key: "layer", value: "CHARACTER", coordinator: "||" },
-                { key: "layer", value: "MOUNT" },
-                { key: "type", value: "IMAGE" },
+                ...TOKEN_FILTER,
                 {
                   key: ["metadata", getPluginId("metadata")],
                   value: undefined,
@@ -78,36 +92,72 @@ export function App() {
             icon: removeIcon,
             label: "Remove from Initiative",
             filter: {
-              every: [
-                { key: "layer", value: "CHARACTER", coordinator: "||" },
-                { key: "layer", value: "MOUNT" },
-                { key: "type", value: "IMAGE" },
-              ],
+              every: [...TOKEN_FILTER],
               permissions: ["UPDATE"],
             },
           },
         ],
         id: getPluginId("menu/toggle"),
         onClick(context) {
+          // Check whether to add the items to initiative or remove them
+          const addToInitiative = context.items.every(
+            (item) => item.metadata[getPluginId("metadata")] === undefined,
+          );
+          if (!addToInitiative) {
+            removeFromInitiative(context.items.map((item) => item.id));
+            return;
+          }
           OBR.scene.items.updateItems(context.items, (items) => {
-            // Check whether to add the items to initiative or remove them
-            const addToInitiative = items.every(
-              (item) => item.metadata[getPluginId("metadata")] === undefined,
-            );
             let count = 0;
             for (const item of items) {
-              if (addToInitiative) {
-                item.metadata[getPluginId("metadata")] = {
-                  count: `${count}`,
-                  active: false,
-                  group: 0,
-                };
-                count += 1;
-              } else {
-                delete item.metadata[getPluginId("metadata")];
-              }
+              item.metadata[getPluginId("metadata")] = {
+                count: `${count}`,
+                active: false,
+                group: 0,
+              };
+              count += 1;
             }
           });
+        },
+      });
+      OBR.contextMenu.create({
+        icons: [
+          {
+            icon: linkIcon,
+            label: "Share One Turn",
+            filter: {
+              min: 2,
+              every: [...TOKEN_FILTER],
+              permissions: ["UPDATE"],
+            },
+          },
+        ],
+        id: getPluginId("menu/link"),
+        onClick(context) {
+          linkTurn(context.items.map((item) => item.id));
+        },
+      });
+      OBR.contextMenu.create({
+        icons: [
+          {
+            icon: unlinkIcon,
+            label: "Take Own Turn",
+            filter: {
+              every: [
+                ...TOKEN_FILTER,
+                {
+                  key: ["metadata", getPluginId("metadata"), "linkedTo"],
+                  value: undefined,
+                  operator: "!=",
+                },
+              ],
+              permissions: ["UPDATE"],
+            },
+          },
+        ],
+        id: getPluginId("menu/unlink"),
+        onClick(context) {
+          unlinkTurn(context.items.map((item) => item.id));
         },
       });
     });

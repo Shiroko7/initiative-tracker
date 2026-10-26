@@ -51,6 +51,7 @@ import { advanceTurn } from "../helpers/turnControls";
 import {
   findActiveSlotIndex,
   orderTurnSlots,
+  splitLinkedItems,
 } from "../helpers/initiativeOrder";
 import PreferencesButton from "../preferences/PreferencesButton";
 
@@ -85,6 +86,10 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
 
   // Initiative
   const [initiativeItems, setInitiativeItems] = useState<InitiativeItem[]>([]);
+  // Tokens taking the turn of another token, by that token's ID
+  const [linkedItems, setLinkedItems] = useState<
+    Map<string, InitiativeItem[]>
+  >(new Map());
   const [roundCount, setRoundCount] = useState(1);
   const [groups, setGroups] = useState<InitiativeGroup[]>(
     DEFAULT_INITIATIVE_GROUPS,
@@ -181,12 +186,15 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
               group: metadata.group !== undefined ? metadata.group : 0,
               groupIndex:
                 metadata.groupIndex !== undefined ? metadata.groupIndex : -1,
+              linkedTo: metadata.linkedTo,
             });
           }
         }
       }
-      guaranteeMinimumGroupIndices(newItems);
-      setInitiativeItems(newItems);
+      const { leaders, linked } = splitLinkedItems(newItems);
+      guaranteeMinimumGroupIndices(leaders);
+      setInitiativeItems(leaders);
+      setLinkedItems(linked);
     };
 
     OBR.scene.items.getItems().then(handleItemsChange);
@@ -325,7 +333,12 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
     }
 
     // Turns across all groups, tied tokens share a turn
-    const slots = orderTurnSlots(newItems, groups, sharedTurns);
+    const followers = [...linkedItems.values()].flat();
+    const slots = orderTurnSlots(
+      [...newItems, ...followers],
+      groups,
+      sharedTurns,
+    );
     const firstSlotIds = (slots[0] ?? []).map((item) => item.id);
 
     // Increment round if active turn was last
@@ -350,18 +363,18 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
     setInitiativeItems(updatedItems);
 
     OBR.scene.items.updateItems(
-      updatedItems.map((i) => i.id),
+      [...updatedItems, ...followers].map((i) => i.id),
       (items) => {
         for (const sceneItem of items) {
-          const found = updatedItems.find((i) => i.id === sceneItem.id);
-          if (!found) continue;
           const metadata = sceneItem.metadata[getPluginId("metadata")];
-          if (isMetadata(metadata)) {
-            metadata.active = found.active;
+          if (!isMetadata(metadata)) continue;
+          metadata.active = firstSlotIds.includes(sceneItem.id);
+          const found = updatedItems.find((i) => i.id === sceneItem.id);
+          if (found) {
             metadata.group = found.group;
             metadata.groupIndex = found.groupIndex;
-            sceneItem.metadata[getPluginId("metadata")] = metadata;
           }
+          sceneItem.metadata[getPluginId("metadata")] = metadata;
         }
       },
     );
@@ -633,6 +646,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                         <InitiativeListItem
                           key={item.id}
                           item={item}
+                          linkedItems={linkedItems.get(item.id) ?? []}
                           darkMode={themeIsDark}
                           onCountChange={(newCount) =>
                             handleInitiativeCountChange(item.id, newCount)

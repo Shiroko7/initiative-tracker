@@ -7,6 +7,7 @@ export default function isMetadata(metadata: unknown): metadata is {
   ready: boolean | undefined;
   group: number | undefined;
   groupIndex: number | undefined;
+  linkedTo?: string;
 } {
   return (
     isPlainObject(metadata) &&

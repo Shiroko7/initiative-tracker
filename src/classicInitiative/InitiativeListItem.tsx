@@ -4,23 +4,24 @@ import ListItemIcon from "@mui/material/ListItemIcon";
 import CloseIcon from "@mui/icons-material/Close";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
-
-import OBR from "@owlbear-rodeo/sdk";
+import LinkOffRoundedIcon from "@mui/icons-material/LinkOffRounded";
 
 import { InitiativeItem } from "../components/InitiativeItem";
 import { IconButton } from "@mui/material";
 import { Box } from "@mui/system";
 import { useState } from "react";
-import { getPluginId } from "../helpers/getPluginId";
 import TokenImage from "../components/TokenImage";
 import { focusItem } from "../helpers/findItem";
 import { cn } from "../helpers/utils";
+import { removeFromInitiative, unlinkTurn } from "../helpers/linkedTurns";
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
 type InitiativeListItemProps = {
   item: InitiativeItem;
+  /** Tokens taking this token's turn along with it */
+  linkedItems: InitiativeItem[];
   onCountChange: (count: string) => void;
   showHidden: boolean;
   darkMode: boolean;
@@ -30,6 +31,7 @@ type InitiativeListItemProps = {
 
 export function InitiativeListItem({
   item,
+  linkedItems,
   onCountChange,
   showHidden,
   darkMode,
@@ -50,6 +52,10 @@ export function InitiativeListItem({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const shownLinkedItems = linkedItems.filter(
+    (linked) => linked.visible || showHidden,
+  );
 
   const handleFocus = (target: HTMLInputElement) => {
     target.select();
@@ -116,7 +122,7 @@ export function InitiativeListItem({
       >
         <IconButton
           sx={{ paddingX: 0, paddingY: 0, height: 30, width: 30 }}
-          onClick={() => removeFromInitiative(item.id)}
+          onClick={() => removeFromInitiative([item.id])}
           tabIndex={-1}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -144,18 +150,40 @@ export function InitiativeListItem({
           }}
         >
           {item.name}
+          {shownLinkedItems.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1">
+              {shownLinkedItems.map((linked) => (
+                <button
+                  key={linked.id}
+                  title={`${linked.name} (click to give its own turn)`}
+                  className={cn(
+                    "group grid size-6 place-items-center rounded bg-transparent p-0",
+                    { "opacity-50": !linked.visible },
+                  )}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    unlinkTurn([linked.id]);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    focusItem(linked.id);
+                  }}
+                >
+                  <img
+                    className="col-start-1 row-start-1 size-6 object-scale-down group-hover:opacity-0"
+                    src={linked.url}
+                  />
+                  <LinkOffRoundedIcon
+                    className="col-start-1 row-start-1 opacity-0 group-hover:opacity-100"
+                    sx={{ height: 20, width: 20 }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </Box>
       </Box>
     </ListItem>
   );
-}
-
-function removeFromInitiative(itemId: string) {
-  OBR.scene.items.getItems([itemId]).then((items) => {
-    OBR.scene.items.updateItems(items, (items) => {
-      for (const item of items) {
-        delete item.metadata[getPluginId("metadata")];
-      }
-    });
-  });
 }

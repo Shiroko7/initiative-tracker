@@ -8,4 +8,6 @@ export interface InitiativeItem {
   ready: boolean;
   group: number;
   groupIndex: number;
+  /** The token whose turn this token takes along with, if any */
+  linkedTo?: string;
 }

@@ -1,4 +1,4 @@
-import OBR, { Vector2, Math2, buildLabel } from "@owlbear-rodeo/sdk";
+import OBR, { buildLabel } from "@owlbear-rodeo/sdk";
 
 export async function deselectText() {
   // Deselect the list item text
@@ -19,36 +19,38 @@ export async function focusItem(itemId: string) {
   await panToItem(itemId);
 }
 
-/** Center the viewport on one or more items without changing the selection. */
+// How much of the screen a group of items can take up before zooming out
+const FRAME_FILL = 0.7;
+
+/**
+ * Center the viewport on one or more items without changing the selection,
+ * zooming out if needed so they're all in frame.
+ */
 export async function panToItem(itemIds: string | string[]) {
-  // Convert the center of the selected item to screen-space
-  const bounds = await OBR.scene.items.getItemBounds(
-    typeof itemIds === "string" ? [itemIds] : itemIds,
+  const [bounds, viewportWidth, viewportHeight, viewportScale] =
+    await Promise.all([
+      OBR.scene.items.getItemBounds(
+        typeof itemIds === "string" ? [itemIds] : itemIds,
+      ),
+      OBR.viewport.getWidth(),
+      OBR.viewport.getHeight(),
+      OBR.viewport.getScale(),
+    ]);
+
+  // Never zoom in, only out far enough to fit everything
+  const scale = Math.min(
+    viewportScale,
+    (viewportWidth * FRAME_FILL) / bounds.width,
+    (viewportHeight * FRAME_FILL) / bounds.height,
   );
-  const boundsAbsoluteCenter = await OBR.viewport.transformPoint(bounds.center);
 
-  // Get the center of the viewport in screen-space
-  const viewportWidth = await OBR.viewport.getWidth();
-  const viewportHeight = await OBR.viewport.getHeight();
-  const viewportCenter: Vector2 = {
-    x: viewportWidth / 2,
-    y: viewportHeight / 2,
-  };
-
-  // Offset the item center by the viewport center
-  const absoluteCenter = Math2.subtract(boundsAbsoluteCenter, viewportCenter);
-
-  // Convert the center to world-space
-  const relativeCenter =
-    await OBR.viewport.inverseTransformPoint(absoluteCenter);
-
-  // Invert and scale the world-space position to match a viewport position offset
-  const viewportScale = await OBR.viewport.getScale();
-  const viewportPosition = Math2.multiply(relativeCenter, -viewportScale);
-
+  // Place the center of the items at the center of the viewport
   await OBR.viewport.animateTo({
-    scale: viewportScale,
-    position: viewportPosition,
+    scale,
+    position: {
+      x: viewportWidth / 2 - bounds.center.x * scale,
+      y: viewportHeight / 2 - bounds.center.y * scale,
+    },
   });
 }
 

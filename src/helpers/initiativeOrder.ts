@@ -25,6 +25,8 @@ export function parseInitiativeItems(
       group:
         metadata.group !== undefined ? metadata.group : zipperInitiative ? 1 : 0,
       groupIndex: metadata.groupIndex !== undefined ? metadata.groupIndex : -1,
+      // Checkbox initiative has no turns to share
+      linkedTo: zipperInitiative ? undefined : metadata.linkedTo,
     });
   }
   return initiativeItems;
@@ -86,14 +88,55 @@ export function buildTurnSlots(
   return slots;
 }
 
+/**
+ * Separate tokens linked to another token's turn from the tokens that have a
+ * turn of their own. A link only counts while the token it points to is in
+ * initiative and has a turn of its own, otherwise the token acts by itself.
+ */
+export function splitLinkedItems(items: InitiativeItem[]) {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const leaderOf = (item: InitiativeItem) => {
+    if (item.linkedTo === undefined || item.linkedTo === item.id) return;
+    const leader = byId.get(item.linkedTo);
+    if (!leader) return;
+    if (leader.linkedTo !== undefined && byId.has(leader.linkedTo)) return;
+    return leader;
+  };
+
+  const leaders: InitiativeItem[] = [];
+  const linked = new Map<string, InitiativeItem[]>();
+  for (const item of items) {
+    const leader = leaderOf(item);
+    if (!leader) leaders.push(item);
+    else linked.set(leader.id, [...(linked.get(leader.id) ?? []), item]);
+  }
+  return { leaders, linked };
+}
+
+/** Turn slots across all groups, in turn order, with the group of each. */
+export function orderGroupedTurnSlots(
+  items: InitiativeItem[],
+  groups: InitiativeGroup[],
+  sharedTurns: boolean,
+): { group: InitiativeGroup; slot: TurnSlot }[] {
+  const { leaders, linked } = splitLinkedItems(items);
+  return segmentInitiativeItems(leaders, groups).flatMap((segment) =>
+    buildTurnSlots(segment.items, sharedTurns).map((slot) => ({
+      group: segment.group,
+      // Linked tokens act on the turn of the token they're linked to
+      slot: slot.flatMap((item) => [item, ...(linked.get(item.id) ?? [])]),
+    })),
+  );
+}
+
 /** Turn slots across all groups, in turn order. */
 export function orderTurnSlots(
   items: InitiativeItem[],
   groups: InitiativeGroup[],
   sharedTurns: boolean,
 ): TurnSlot[] {
-  return segmentInitiativeItems(items, groups).flatMap((segment) =>
-    buildTurnSlots(segment.items, sharedTurns),
+  return orderGroupedTurnSlots(items, groups, sharedTurns).map(
+    ({ slot }) => slot,
   );
 }
 
