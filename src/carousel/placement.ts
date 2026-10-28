@@ -17,7 +17,7 @@ interface Size {
 const FLOATING_MIN_VISIBLE = 80;
 
 /** Where a floating carousel's top left corner goes, kept on screen. */
-function floatingCorner(preferences: PlayerPreferences, viewport: Size) {
+export function floatingCorner(preferences: PlayerPreferences, viewport: Size) {
   return {
     left: Math.min(
       Math.max(0, preferences.carouselFloatingX * viewport.width),

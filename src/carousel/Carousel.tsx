@@ -36,7 +36,7 @@ import {
   usePlayerPreferences,
   writePlayerPreferences,
 } from "../helpers/playerPreferences";
-import { getCarouselCorner } from "./placement";
+import { floatingCorner, getCarouselCorner } from "./placement";
 import {
   CAROUSEL_EDGE_MARGIN,
   CAROUSEL_HEARTBEAT_CHANNEL,
@@ -110,12 +110,21 @@ export function Carousel() {
     (activeHeight * preferences.carouselWaitingSize) / 100,
   );
   const maxTokens = preferences.carouselMaxTokens;
-  const maxWidth = vertical
-    ? Math.min(400, viewport.width / 3)
-    : viewport.width - CAROUSEL_EDGE_MARGIN * 2;
-  const maxHeight = vertical
-    ? viewport.height - CAROUSEL_SIDE_OFFSET * 2
-    : viewport.height / 2;
+  // A floating carousel only has the space right of and below its corner
+  const corner =
+    preferences.carouselPosition === "FLOATING"
+      ? floatingCorner(preferences, viewport)
+      : { left: 0, top: 0 };
+  const maxWidth = Math.min(
+    vertical
+      ? Math.min(400, viewport.width / 3)
+      : viewport.width - CAROUSEL_EDGE_MARGIN * 2,
+    viewport.width - corner.left - CAROUSEL_EDGE_MARGIN,
+  );
+  const maxHeight = Math.min(
+    vertical ? viewport.height - CAROUSEL_SIDE_OFFSET * 2 : viewport.height / 2,
+    viewport.height - corner.top - CAROUSEL_EDGE_MARGIN,
+  );
 
   const zipper = readBooleanFromMetadata(
     roomMetadata,
@@ -398,9 +407,8 @@ export function Carousel() {
       <div
         ref={panelRef}
         className={cn(
-          "flex w-max flex-col rounded-2xl bg-[#1e202c]/90 text-white shadow-lg ring-1 ring-white/10 transition-opacity",
+          "flex w-max flex-col rounded-2xl bg-[#1e202c]/90 text-white shadow-lg ring-1 ring-white/10",
           {
-            "opacity-60": moveDrag.dragging,
             "px-1.5 py-0.5": !vertical,
             "p-1": vertical,
           },
@@ -510,44 +518,64 @@ function useDragScroll(
   };
 }
 
+interface MoveDrag {
+  x: number;
+  y: number;
+  moved: boolean;
+  // Filled in once the screen size has loaded
+  origin?: {
+    corner: { left: number; top: number };
+    viewport: { width: number; height: number };
+    size: { width: number; height: number };
+  };
+}
+
 /**
- * Drag the carousel to anywhere on screen. A popover can't follow the pointer,
- * so the carousel moves when it's dropped, becoming a floating carousel that
- * keeps its current layout.
+ * Drag the carousel to anywhere on screen, making it a floating carousel
+ * that keeps its current layout. The popover follows the pointer by being
+ * placed again, at most once a frame, at the new position.
  */
 function useMoveDrag(
   preferences: PlayerPreferences,
   vertical: boolean,
   size: React.MutableRefObject<{ width: number; height: number }>,
 ) {
-  const start = useRef<{ x: number; y: number }>();
+  const drag = useRef<MoveDrag>();
+  const frame = useRef<number>();
   const [dragging, setDragging] = useState(false);
 
-  const finish = async (e: React.PointerEvent) => {
-    if (!start.current) return;
-    // Screen coordinates don't depend on where the popover is
-    const dx = e.screenX - start.current.x;
-    const dy = e.screenY - start.current.y;
-    start.current = undefined;
-    setDragging(false);
-    if (Math.hypot(dx, dy) < 4) return;
-
-    const [width, height] = await Promise.all([
-      OBR.viewport.getWidth(),
-      OBR.viewport.getHeight(),
-    ]);
-    if (width <= 0 || height <= 0) return;
-    const corner = getCarouselCorner(
-      preferences,
-      { width, height },
-      size.current,
+  // Screen coordinates don't change as the popover moves under the pointer
+  const moveTo = (e: React.PointerEvent) => {
+    const current = drag.current;
+    const origin = current?.origin;
+    if (!current || !origin) return;
+    const { corner, viewport, size } = origin;
+    // Keep the whole carousel on screen
+    const left = clamp(
+      corner.left + e.screenX - current.x,
+      0,
+      viewport.width - size.width,
     );
-    writePlayerPreferences({
-      carouselPosition: "FLOATING",
-      carouselFloatingVertical: vertical,
-      carouselFloatingX: (corner.left + dx) / width,
-      carouselFloatingY: (corner.top + dy) / height,
+    const top = clamp(
+      corner.top + e.screenY - current.y,
+      0,
+      viewport.height - size.height,
+    );
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      writePlayerPreferences({
+        carouselPosition: "FLOATING",
+        carouselFloatingVertical: vertical,
+        carouselFloatingX: left / viewport.width,
+        carouselFloatingY: top / viewport.height,
+      });
     });
+  };
+
+  const end = () => {
+    drag.current = undefined;
+    setDragging(false);
   };
 
   return {
@@ -556,16 +584,43 @@ function useMoveDrag(
       onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        start.current = { x: e.screenX, y: e.screenY };
+        const current: MoveDrag = { x: e.screenX, y: e.screenY, moved: false };
+        drag.current = current;
         setDragging(true);
+        Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]).then(
+          ([width, height]) => {
+            if (drag.current !== current || width <= 0 || height <= 0) return;
+            const viewport = { width, height };
+            current.origin = {
+              corner: getCarouselCorner(preferences, viewport, size.current),
+              viewport,
+              size: { ...size.current },
+            };
+          },
+        );
       },
-      onPointerUp: finish,
-      onPointerCancel: () => {
-        start.current = undefined;
-        setDragging(false);
+      onPointerMove: (e: React.PointerEvent) => {
+        const current = drag.current;
+        if (!current) return;
+        if (
+          !current.moved &&
+          Math.hypot(e.screenX - current.x, e.screenY - current.y) < 4
+        )
+          return;
+        current.moved = true;
+        moveTo(e);
       },
+      onPointerUp: (e: React.PointerEvent) => {
+        if (drag.current?.moved) moveTo(e);
+        end();
+      },
+      onPointerCancel: end,
     },
   };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
 /** A group name or new round marker between cards. */
