@@ -25,9 +25,10 @@ import {
 import {
   CAROUSEL_HEARTBEAT_CHANNEL,
   CAROUSEL_HEARTBEAT_INTERVAL,
+  CAROUSEL_PLACED_CHANNEL,
   CAROUSEL_POPOVER_ID,
 } from "./carousel/constants";
-import { getCarouselPopoverPlacement } from "./carousel/placement";
+import { getCarouselPopover, Size } from "./carousel/placement";
 
 /*
   Runs on every client for the lifetime of the room. Each client manages its
@@ -58,6 +59,8 @@ const state: State = {
 let carouselPlacement = "";
 // When the carousel was last opened or last reported that it's open
 let carouselSeenAt = 0;
+// The size the carousel last reported fitting itself to
+let carouselSize: Size | undefined;
 let lastActiveKey: string | undefined;
 let lastMarkerKey = "";
 let markerQueue: Promise<void> = Promise.resolve();
@@ -84,8 +87,11 @@ OBR.onReady(async () => {
 
   // The carousel can fail to open or get closed by Owlbear Rodeo, so reopen
   // it if it should be showing but has stopped reporting in
-  OBR.broadcast.onMessage(CAROUSEL_HEARTBEAT_CHANNEL, () => {
+  OBR.broadcast.onMessage(CAROUSEL_HEARTBEAT_CHANNEL, (event) => {
     carouselSeenAt = Date.now();
+    const size = event.data as Partial<Size> | undefined;
+    if (typeof size?.width === "number" && typeof size.height === "number")
+      carouselSize = { width: size.width, height: size.height };
   });
   // The SDK has no resize event, so also check for the window changing size
   // to keep the carousel placed against the right edges
@@ -190,7 +196,11 @@ function getTurnState() {
     parseInitiativeItems(state.items, zipper),
     readGroupsFromMetadata(state.sceneMetadata),
     !zipper &&
-      readBooleanFromMetadata(state.roomMetadata, SHARED_TURNS_METADATA_ID, true),
+      readBooleanFromMetadata(
+        state.roomMetadata,
+        SHARED_TURNS_METADATA_ID,
+        true,
+      ),
   );
   const canSee = (item: { visible: boolean }) =>
     state.role === "GM" || item.visible;
@@ -246,16 +256,17 @@ function updateCarousel(hasItems: boolean) {
   }
   carouselSeenAt = Date.now();
 
-  // The carousel resizes itself to fit its tokens once it has rendered
-  OBR.popover.open({
-    id: CAROUSEL_POPOVER_ID,
-    url: "/src/carousel/carousel.html",
-    anchorReference: "POSITION",
-    hidePaper: true,
-    disableClickAway: true,
-    marginThreshold: 0,
-    ...getCarouselPopoverPlacement(preferences, viewportSize),
-  });
+  // Reopening resets the popover's size, so keep the size the carousel fitted
+  // itself to, then let it know so it can fit itself again
+  OBR.popover
+    .open(getCarouselPopover(preferences, viewportSize, carouselSize))
+    .then(() =>
+      OBR.broadcast.sendMessage(
+        CAROUSEL_PLACED_CHANNEL,
+        {},
+        { destination: "LOCAL" },
+      ),
+    );
 }
 
 /**

@@ -2,13 +2,15 @@ import {
   isCarouselVertical,
   PlayerPreferences,
 } from "../helpers/playerPreferences";
+import { Popover } from "@owlbear-rodeo/sdk";
 import {
   CAROUSEL_EDGE_MARGIN,
+  CAROUSEL_POPOVER_ID,
   CAROUSEL_SIDE_OFFSET,
   CAROUSEL_TOP_OFFSET,
 } from "./constants";
 
-interface Size {
+export interface Size {
   width: number;
   height: number;
 }
@@ -30,11 +32,43 @@ export function floatingCorner(preferences: PlayerPreferences, viewport: Size) {
   };
 }
 
-/** The popover options that place the carousel, before it fits itself. */
-export function getCarouselPopoverPlacement(
+const CAROUSEL_POPOVER = {
+  id: CAROUSEL_POPOVER_ID,
+  url: "/src/carousel/carousel.html",
+  anchorReference: "POSITION",
+  hidePaper: true,
+  disableClickAway: true,
+  marginThreshold: 0,
+} as const;
+
+/**
+ * The carousel's popover, placed for the given preferences. Without a size it
+ * opens at a starting size, then fits itself once it has rendered.
+ */
+export function getCarouselPopover(
   preferences: PlayerPreferences,
   viewport: Size,
-) {
+  size?: Size,
+): Popover {
+  return {
+    ...CAROUSEL_POPOVER,
+    ...getPlacement(preferences, viewport),
+    ...(size && size.width > 0 && size.height > 0 ? size : {}),
+  };
+}
+
+/** The carousel's popover stretched over the whole screen. */
+export function getFullScreenCarouselPopover(viewport: Size): Popover {
+  return {
+    ...CAROUSEL_POPOVER,
+    ...viewport,
+    anchorPosition: { left: 0, top: 0 },
+    anchorOrigin: { horizontal: "LEFT", vertical: "TOP" },
+    transformOrigin: { horizontal: "LEFT", vertical: "TOP" },
+  };
+}
+
+function getPlacement(preferences: PlayerPreferences, viewport: Size) {
   const { width, height } = viewport;
   const vertical = isCarouselVertical(preferences);
   const size = vertical

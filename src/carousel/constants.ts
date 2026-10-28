@@ -4,6 +4,8 @@ export const CAROUSEL_POPOVER_ID = getPluginId("carousel");
 // The open carousel reports in on this channel so it can be reopened if lost
 export const CAROUSEL_HEARTBEAT_CHANNEL = getPluginId("carousel/heartbeat");
 export const CAROUSEL_HEARTBEAT_INTERVAL = 1000;
+// The background script announces on this channel that it placed the carousel
+export const CAROUSEL_PLACED_CHANNEL = getPluginId("carousel/placed");
 
 // Gap between the carousel and the edge of the screen
 export const CAROUSEL_EDGE_MARGIN = 12;
