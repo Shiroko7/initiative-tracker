@@ -109,7 +109,7 @@ export function Carousel() {
   }, []);
 
   const vertical = isCarouselVertical(preferences);
-  const moveDrag = useMoveDrag(preferences, vertical, lastSize);
+  const moveDrag = useMoveDrag(preferences, vertical, lastSize, reportIn);
   const moveDragRef = useRef(moveDrag);
   moveDragRef.current = moveDrag;
   const collapsed = preferences.carouselCollapsed;
@@ -119,7 +119,8 @@ export function Carousel() {
     (activeHeight * preferences.carouselWaitingSize) / 100,
   );
   const maxTokens = preferences.carouselMaxTokens;
-  // A floating carousel only has the space right of and below its corner
+  // A floating carousel only has the space right of and below its corner,
+  // which its outer padding already keeps clear of the edge
   const corner =
     preferences.carouselPosition === "FLOATING"
       ? floatingCorner(preferences, viewport)
@@ -128,11 +129,11 @@ export function Carousel() {
     vertical
       ? Math.min(400, viewport.width / 3)
       : viewport.width - CAROUSEL_EDGE_MARGIN * 2,
-    viewport.width - corner.left - CAROUSEL_EDGE_MARGIN,
+    viewport.width - corner.left,
   );
   const maxHeight = Math.min(
     vertical ? viewport.height - CAROUSEL_SIDE_OFFSET * 2 : viewport.height / 2,
-    viewport.height - corner.top - CAROUSEL_EDGE_MARGIN,
+    viewport.height - corner.top,
   );
 
   const zipper = readBooleanFromMetadata(
@@ -228,7 +229,7 @@ export function Carousel() {
         size.height !== lastSize.current.height;
       lastSize.current = size;
       if (resized) {
-        if (!moveDragRef.current.frame) fitPopover();
+        if (!moveDragRef.current.busy) fitPopover();
         reportIn();
       }
       updateOverflow();
@@ -248,11 +249,15 @@ export function Carousel() {
   useEffect(
     () =>
       OBR.broadcast.onMessage(CAROUSEL_PLACED_CHANNEL, () => {
-        if (!moveDragRef.current.frame && lastSize.current.width > 0)
+        if (!moveDragRef.current.busy && lastSize.current.width > 0)
           fitPopover();
       }),
     [],
   );
+  // Catch up on any resizing skipped while the carousel was being moved
+  useEffect(() => {
+    if (!moveDrag.busy && lastSize.current.width > 0) fitPopover();
+  }, [moveDrag.busy]);
 
   // Fade the end of the list when there are more tokens to scroll to
   const updateOverflow = () => {
@@ -547,14 +552,15 @@ function useDragScroll(
 }
 
 interface MoveDrag {
-  x: number;
-  y: number;
+  phase: "PRESSED" | "DRAGGING" | "DROPPING";
+  // Where the pointer went down, relative to the carousel's corner
+  grab: { x: number; y: number };
+  size: Size;
   // Filled in once the screen size has loaded
-  origin?: {
-    corner: { left: number; top: number };
-    viewport: Size;
-    size: Size;
-  };
+  viewport?: Size;
+  corner?: { left: number; top: number };
+  // Where the carousel's corner is being dragged to
+  position?: { left: number; top: number };
 }
 
 /**
@@ -562,100 +568,132 @@ interface MoveDrag {
  * that keeps its current layout. A popover can't follow the pointer smoothly,
  * so while dragged it covers the whole screen and the panel moves inside it,
  * then it shrinks back around the panel where it's dropped.
+ *
+ * The popover only changes size some time after it's asked to, so the panel
+ * follows the window's actual size to stay put while it changes.
  */
 function useMoveDrag(
   preferences: PlayerPreferences,
   vertical: boolean,
   size: React.MutableRefObject<Size>,
+  reportIn: () => void,
 ) {
   const drag = useRef<MoveDrag>();
-  // Where the carousel is while dragged, in screen coordinates
-  const [frame, setFrame] = useState<Size & { left: number; top: number }>();
-  const frameRef = useRef(frame);
-  frameRef.current = frame;
-  const [dragging, setDragging] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number }>();
+  const [fullScreen, setFullScreen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const positionFor = (e: React.PointerEvent) => {
-    const current = drag.current;
-    const origin = current?.origin;
-    if (!current || !origin) return;
-    const { corner, viewport, size } = origin;
-    // Keep the whole carousel on screen
-    return {
-      ...size,
-      left: clamp(
-        corner.left + e.screenX - current.x,
-        0,
-        viewport.width - size.width,
-      ),
-      top: clamp(
-        corner.top + e.screenY - current.y,
-        0,
-        viewport.height - size.height,
-      ),
-    };
+  const isFullScreen = (viewport: Size) =>
+    window.innerWidth >= viewport.width - 2 &&
+    window.innerHeight >= viewport.height - 2;
+
+  const finish = (current: MoveDrag) => {
+    if (drag.current !== current) return;
+    drag.current = undefined;
+    setPosition(undefined);
+    setFullScreen(false);
+    setBusy(false);
   };
 
-  const drop = async () => {
-    const origin = drag.current?.origin;
-    const final = frameRef.current;
-    drag.current = undefined;
-    setDragging(false);
-    if (!origin || !final) return;
-    const { viewport } = origin;
+  useEffect(() => {
+    const handleResize = () => {
+      const current = drag.current;
+      const full = !!current?.viewport && isFullScreen(current.viewport);
+      setFullScreen(full);
+      if (current?.phase === "DROPPING" && !full) finish(current);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const drop = () => {
+    const current = drag.current;
+    if (!current) return;
+    const { viewport, position } = current;
+    if (current.phase !== "DRAGGING" || !viewport || !position) {
+      finish(current);
+      return;
+    }
+    current.phase = "DROPPING";
     const placed: PlayerPreferences = {
       ...preferences,
       carouselPosition: "FLOATING",
       carouselFloatingVertical: vertical,
-      carouselFloatingX: final.left / viewport.width,
-      carouselFloatingY: final.top / viewport.height,
+      carouselFloatingX: position.left / viewport.width,
+      carouselFloatingY: position.top / viewport.height,
     };
-    // Shrink the popover around the panel before letting the panel go back
-    // into it, so it doesn't flash at the corner of the screen
-    await OBR.popover.open(getCarouselPopover(placed, viewport, origin.size));
-    setFrame(undefined);
+    OBR.popover.open(getCarouselPopover(placed, viewport, current.size));
+    // The background script places the carousel the same way, at this size
+    reportIn();
     writePlayerPreferences(placed);
+    // In case the window never reports shrinking back
+    setTimeout(() => finish(current), 1000);
   };
 
   return {
-    dragging,
-    frame,
+    busy,
+    dragging: busy && drag.current?.phase !== "DROPPING",
+    // Where to draw the carousel while its popover covers the screen
+    frame:
+      fullScreen && position
+        ? { ...position, ...drag.current?.size }
+        : undefined,
     handlers: {
       onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
-        if (frameRef.current) return;
+        if (drag.current) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        const current: MoveDrag = { x: e.screenX, y: e.screenY };
+        // The popover's corner is the carousel's corner
+        const current: MoveDrag = {
+          phase: "PRESSED",
+          grab: { x: e.clientX, y: e.clientY },
+          size: { ...size.current },
+        };
         drag.current = current;
-        setDragging(true);
+        setBusy(true);
         Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]).then(
           ([width, height]) => {
             if (drag.current !== current || width <= 0 || height <= 0) return;
-            const viewport = { width, height };
-            current.origin = {
-              corner: getCarouselCorner(preferences, viewport, size.current),
-              viewport,
-              size: { ...size.current },
-            };
+            current.viewport = { width, height };
+            current.corner = getCarouselCorner(
+              preferences,
+              current.viewport,
+              current.size,
+            );
           },
         );
       },
       onPointerMove: (e: React.PointerEvent) => {
         const current = drag.current;
-        if (!current?.origin) return;
+        const { viewport, corner } = current ?? {};
+        if (!current || !viewport || !corner) return;
+        if (current.phase === "DROPPING") return;
         if (
-          !frameRef.current &&
-          Math.hypot(e.screenX - current.x, e.screenY - current.y) < 4
+          current.phase === "PRESSED" &&
+          Math.hypot(e.clientX - current.grab.x, e.clientY - current.grab.y) < 4
         )
           return;
-        const position = positionFor(e);
-        if (!position) return;
-        if (!frameRef.current)
-          OBR.popover.open(
-            getFullScreenCarouselPopover(current.origin.viewport),
-          );
-        frameRef.current = position;
-        setFrame(position);
+        if (current.phase === "PRESSED") {
+          current.phase = "DRAGGING";
+          OBR.popover.open(getFullScreenCarouselPopover(viewport));
+        }
+        // Until the popover covers the screen, the pointer is measured from
+        // where the carousel started
+        const origin = isFullScreen(viewport) ? { left: 0, top: 0 } : corner;
+        const next = {
+          left: clamp(
+            origin.left + e.clientX - current.grab.x,
+            0,
+            viewport.width - current.size.width,
+          ),
+          top: clamp(
+            origin.top + e.clientY - current.grab.y,
+            0,
+            viewport.height - current.size.height,
+          ),
+        };
+        current.position = next;
+        setPosition(next);
       },
       onPointerUp: drop,
       onPointerCancel: drop,
