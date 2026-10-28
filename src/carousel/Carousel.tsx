@@ -7,6 +7,7 @@ import VisibilityOffRounded from "@mui/icons-material/VisibilityOffRounded";
 import LoopRoundedIcon from "@mui/icons-material/LoopRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import DragIndicatorRoundedIcon from "@mui/icons-material/DragIndicatorRounded";
 
 import { InitiativeItem } from "../components/InitiativeItem";
 import {
@@ -29,7 +30,13 @@ import { advanceTurn } from "../helpers/turnControls";
 import { buildEntries } from "./carouselEntries";
 import { panToItem } from "../helpers/findItem";
 import { cn } from "../helpers/utils";
-import { usePlayerPreferences } from "../helpers/playerPreferences";
+import {
+  isCarouselVertical,
+  PlayerPreferences,
+  usePlayerPreferences,
+  writePlayerPreferences,
+} from "../helpers/playerPreferences";
+import { getCarouselCorner } from "./placement";
 import {
   CAROUSEL_EDGE_MARGIN,
   CAROUSEL_HEARTBEAT_CHANNEL,
@@ -95,7 +102,7 @@ export function Carousel() {
     );
   }, []);
 
-  const vertical = preferences.carouselPosition !== "TOP";
+  const vertical = isCarouselVertical(preferences);
   const collapsed = preferences.carouselCollapsed;
   const showNames = vertical && preferences.carouselShowNames;
   const activeHeight = preferences.carouselCardSize;
@@ -241,6 +248,22 @@ export function Carousel() {
   }`;
   const maskImage = `linear-gradient(${vertical ? "to bottom" : "to right"}, ${fade})`;
 
+  const moveDrag = useMoveDrag(preferences, vertical, lastSize);
+  const grip = (
+    <div
+      title="Drag to move"
+      className={cn(
+        "grid shrink-0 touch-none place-items-center self-center rounded text-white/40 hover:text-white/80",
+        moveDrag.dragging ? "cursor-grabbing" : "cursor-grab",
+      )}
+      {...moveDrag.handlers}
+    >
+      <DragIndicatorRoundedIcon
+        sx={{ fontSize: 16, rotate: vertical ? "90deg" : "0deg" }}
+      />
+    </div>
+  );
+
   // Browsing the order only scrolls this player's view, it never changes the turn
   const dragScroll = useDragScroll(scrollRef, vertical);
   const scrollBy = (direction: 1 | -1) => {
@@ -363,17 +386,21 @@ export function Carousel() {
   return (
     <div
       className={cn("flex h-full", {
-        "items-start justify-center": !vertical,
+        "items-start justify-center": preferences.carouselPosition === "TOP",
+        "items-end justify-center": preferences.carouselPosition === "BOTTOM",
         "items-center justify-start": preferences.carouselPosition === "LEFT",
         "items-center justify-end": preferences.carouselPosition === "RIGHT",
+        "items-start justify-start":
+          preferences.carouselPosition === "FLOATING",
       })}
       style={{ padding: OUTER_PADDING }}
     >
       <div
         ref={panelRef}
         className={cn(
-          "flex w-max flex-col rounded-2xl bg-[#1e202c]/90 text-white shadow-lg ring-1 ring-white/10",
+          "flex w-max flex-col rounded-2xl bg-[#1e202c]/90 text-white shadow-lg ring-1 ring-white/10 transition-opacity",
           {
+            "opacity-60": moveDrag.dragging,
             "px-1.5 py-0.5": !vertical,
             "p-1": vertical,
           },
@@ -381,6 +408,7 @@ export function Carousel() {
       >
         {vertical ? (
           <>
+            {grip}
             {round && <div className="flex justify-center">{round}</div>}
             <div className="relative">
               <div
@@ -408,6 +436,7 @@ export function Carousel() {
         ) : (
           <>
             <div className="flex items-center gap-0.5">
+              {grip}
               {previousButton}
               {round}
               <div className="relative">
@@ -477,6 +506,64 @@ function useDragScroll(
     },
     onClickCapture: (e: React.MouseEvent) => {
       if (drag.current?.moved) e.stopPropagation();
+    },
+  };
+}
+
+/**
+ * Drag the carousel to anywhere on screen. A popover can't follow the pointer,
+ * so the carousel moves when it's dropped, becoming a floating carousel that
+ * keeps its current layout.
+ */
+function useMoveDrag(
+  preferences: PlayerPreferences,
+  vertical: boolean,
+  size: React.MutableRefObject<{ width: number; height: number }>,
+) {
+  const start = useRef<{ x: number; y: number }>();
+  const [dragging, setDragging] = useState(false);
+
+  const finish = async (e: React.PointerEvent) => {
+    if (!start.current) return;
+    // Screen coordinates don't depend on where the popover is
+    const dx = e.screenX - start.current.x;
+    const dy = e.screenY - start.current.y;
+    start.current = undefined;
+    setDragging(false);
+    if (Math.hypot(dx, dy) < 4) return;
+
+    const [width, height] = await Promise.all([
+      OBR.viewport.getWidth(),
+      OBR.viewport.getHeight(),
+    ]);
+    if (width <= 0 || height <= 0) return;
+    const corner = getCarouselCorner(
+      preferences,
+      { width, height },
+      size.current,
+    );
+    writePlayerPreferences({
+      carouselPosition: "FLOATING",
+      carouselFloatingVertical: vertical,
+      carouselFloatingX: (corner.left + dx) / width,
+      carouselFloatingY: (corner.top + dy) / height,
+    });
+  };
+
+  return {
+    dragging,
+    handlers: {
+      onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = { x: e.screenX, y: e.screenY };
+        setDragging(true);
+      },
+      onPointerUp: finish,
+      onPointerCancel: () => {
+        start.current = undefined;
+        setDragging(false);
+      },
     },
   };
 }

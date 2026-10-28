@@ -69,7 +69,7 @@ export default function Preferences(): JSX.Element {
           >
             <SubSettingsRow
               label="Position"
-              description="Left and right show a scrolling list"
+              description="Or drag the carousel by its handle to float it anywhere"
               action={
                 <Select
                   color="secondary"
@@ -82,11 +82,30 @@ export default function Preferences(): JSX.Element {
                   sx={{ height: 36, borderRadius: "6px" }}
                 >
                   <MenuItem value="TOP">Top</MenuItem>
+                  <MenuItem value="BOTTOM">Bottom</MenuItem>
                   <MenuItem value="LEFT">Left</MenuItem>
                   <MenuItem value="RIGHT">Right</MenuItem>
+                  <MenuItem value="FLOATING">Floating</MenuItem>
                 </Select>
               }
               collapseElement={!preferences.carouselEnabled}
+            />
+            <SubSettingsRow
+              label="Vertical List"
+              description="Show the floating carousel as a scrolling list"
+              action={
+                <Switch
+                  color="secondary"
+                  checked={preferences.carouselFloatingVertical}
+                  onChange={(_e, value) =>
+                    writePlayerPreferences({ carouselFloatingVertical: value })
+                  }
+                />
+              }
+              collapseElement={
+                !preferences.carouselEnabled ||
+                preferences.carouselPosition !== "FLOATING"
+              }
             />
             <SubSettingsRow
               label="Visible Tokens"

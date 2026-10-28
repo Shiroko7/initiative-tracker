@@ -8,7 +8,14 @@ import { getPluginId } from "./getPluginId";
   windows on this client (background, carousel, popovers) so they apply live.
 */
 
-export type CarouselPosition = "TOP" | "LEFT" | "RIGHT";
+export type CarouselPosition = "TOP" | "BOTTOM" | "LEFT" | "RIGHT" | "FLOATING";
+const CAROUSEL_POSITIONS: CarouselPosition[] = [
+  "TOP",
+  "BOTTOM",
+  "LEFT",
+  "RIGHT",
+  "FLOATING",
+];
 
 // Allowed range of each numeric preference
 export const PREFERENCE_LIMITS = {
@@ -23,6 +30,10 @@ export const PREFERENCE_LIMITS = {
 export interface PlayerPreferences {
   carouselEnabled: boolean;
   carouselPosition: CarouselPosition;
+  // Where a floating carousel's top left corner sits, as a share of the screen
+  carouselFloatingX: number;
+  carouselFloatingY: number;
+  carouselFloatingVertical: boolean;
   carouselCardSize: number;
   carouselWaitingSize: number;
   carouselMaxTokens: number;
@@ -37,6 +48,9 @@ export interface PlayerPreferences {
 export const DEFAULT_PLAYER_PREFERENCES: PlayerPreferences = {
   carouselEnabled: true,
   carouselPosition: "TOP",
+  carouselFloatingX: 0.3,
+  carouselFloatingY: 0.15,
+  carouselFloatingVertical: false,
   carouselCardSize: 88,
   carouselWaitingSize: 60,
   carouselMaxTokens: 10,
@@ -108,8 +122,13 @@ function sanitize(value: Partial<PlayerPreferences>): PlayerPreferences {
     if (typeof value[key] === typeof preferences[key])
       (preferences as Record<string, unknown>)[key] = value[key];
   }
-  if (!["TOP", "LEFT", "RIGHT"].includes(preferences.carouselPosition))
+  if (!CAROUSEL_POSITIONS.includes(preferences.carouselPosition))
     preferences.carouselPosition = DEFAULT_PLAYER_PREFERENCES.carouselPosition;
+  for (const name of ["carouselFloatingX", "carouselFloatingY"] as const) {
+    preferences[name] = Number.isFinite(preferences[name])
+      ? Math.min(1, Math.max(0, preferences[name]))
+      : DEFAULT_PLAYER_PREFERENCES[name];
+  }
   for (const [key, { min, max }] of Object.entries(PREFERENCE_LIMITS)) {
     const name = key as keyof typeof PREFERENCE_LIMITS;
     preferences[name] = Number.isFinite(preferences[name])
@@ -117,6 +136,16 @@ function sanitize(value: Partial<PlayerPreferences>): PlayerPreferences {
       : DEFAULT_PLAYER_PREFERENCES[name];
   }
   return preferences;
+}
+
+/** Side positions show a scrolling list, the others a bar. */
+export function isCarouselVertical(preferences: PlayerPreferences) {
+  const position = preferences.carouselPosition;
+  return (
+    position === "LEFT" ||
+    position === "RIGHT" ||
+    (position === "FLOATING" && preferences.carouselFloatingVertical)
+  );
 }
 
 const PREFERENCES_POPOVER_ID = getPluginId("preferences");

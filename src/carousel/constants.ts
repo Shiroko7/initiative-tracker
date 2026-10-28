@@ -7,5 +7,7 @@ export const CAROUSEL_HEARTBEAT_INTERVAL = 1000;
 
 // Gap between the carousel and the edge of the screen
 export const CAROUSEL_EDGE_MARGIN = 12;
+// Keeps the top carousel below Owlbear Rodeo's tool options bar
+export const CAROUSEL_TOP_OFFSET = 52;
 // Keeps the side carousel clear of Owlbear Rodeo's toolbars
 export const CAROUSEL_SIDE_OFFSET = 72;

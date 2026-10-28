@@ -23,12 +23,11 @@ import {
   readPlayerPreferences,
 } from "./helpers/playerPreferences";
 import {
-  CAROUSEL_EDGE_MARGIN,
   CAROUSEL_HEARTBEAT_CHANNEL,
   CAROUSEL_HEARTBEAT_INTERVAL,
   CAROUSEL_POPOVER_ID,
-  CAROUSEL_SIDE_OFFSET,
 } from "./carousel/constants";
+import { getCarouselPopoverPlacement } from "./carousel/placement";
 
 /*
   Runs on every client for the lifetime of the room. Each client manages its
@@ -219,13 +218,23 @@ function update() {
 }
 
 function updateCarousel(hasItems: boolean) {
-  const { carouselEnabled, carouselPosition } = state.preferences;
-  const shouldShow = state.sceneReady && hasItems && carouselEnabled;
+  const { preferences } = state;
+  const shouldShow =
+    state.sceneReady && hasItems && preferences.carouselEnabled;
   const { width, height } = viewportSize;
   // Wait until the page has a size to place the carousel against
   if (shouldShow && (width <= 0 || height <= 0)) return;
   const placement = shouldShow
-    ? `${carouselPosition}:${width}x${height}`
+    ? JSON.stringify([
+        preferences.carouselPosition,
+        preferences.carouselPosition === "FLOATING" && [
+          preferences.carouselFloatingX,
+          preferences.carouselFloatingY,
+          preferences.carouselFloatingVertical,
+        ],
+        width,
+        height,
+      ])
     : "";
 
   if (placement === carouselPlacement) return;
@@ -238,42 +247,15 @@ function updateCarousel(hasItems: boolean) {
   carouselSeenAt = Date.now();
 
   // The carousel resizes itself to fit its tokens once it has rendered
-  const common = {
+  OBR.popover.open({
     id: CAROUSEL_POPOVER_ID,
     url: "/src/carousel/carousel.html",
     anchorReference: "POSITION",
     hidePaper: true,
     disableClickAway: true,
     marginThreshold: 0,
-  } as const;
-  if (carouselPosition === "TOP") {
-    OBR.popover.open({
-      ...common,
-      width: Math.min(400, width - CAROUSEL_EDGE_MARGIN * 2),
-      height: 120,
-      anchorPosition: { left: width / 2, top: CAROUSEL_EDGE_MARGIN },
-      anchorOrigin: { horizontal: "CENTER", vertical: "TOP" },
-      transformOrigin: { horizontal: "CENTER", vertical: "TOP" },
-    });
-  } else {
-    const left = carouselPosition === "LEFT";
-    OBR.popover.open({
-      ...common,
-      width: 200,
-      height: Math.min(400, height - CAROUSEL_SIDE_OFFSET * 2),
-      anchorPosition: {
-        left: left
-          ? CAROUSEL_SIDE_OFFSET
-          : width - CAROUSEL_EDGE_MARGIN,
-        top: height / 2,
-      },
-      anchorOrigin: { horizontal: left ? "LEFT" : "RIGHT", vertical: "CENTER" },
-      transformOrigin: {
-        horizontal: left ? "LEFT" : "RIGHT",
-        vertical: "CENTER",
-      },
-    });
-  }
+    ...getCarouselPopoverPlacement(preferences, viewportSize),
+  });
 }
 
 /**
