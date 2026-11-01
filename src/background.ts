@@ -1,5 +1,6 @@
 import OBR, { Item, Metadata } from "@owlbear-rodeo/sdk";
 import {
+  IN_COMBAT_METADATA_ID,
   readBooleanFromMetadata,
   readGroupsFromMetadata,
   SHARED_TURNS_METADATA_ID,
@@ -222,9 +223,15 @@ function getTurnState() {
 
 function update() {
   const turn = getTurnState();
-  updateCarousel(turn.visibleCount > 0);
-  updateCamera(turn.activeKey, turn.activeIds);
-  updateMarkers(turn.activeIds, turn.nextIds);
+  // Out of combat the turn display goes away, and comes back as it was
+  const inCombat = readBooleanFromMetadata(
+    state.sceneMetadata,
+    IN_COMBAT_METADATA_ID,
+    true,
+  );
+  updateCarousel(inCombat && turn.visibleCount > 0);
+  updateCamera(turn.activeKey, inCombat ? turn.activeIds : []);
+  updateMarkers(inCombat ? turn.activeIds : [], inCombat ? turn.nextIds : []);
 }
 
 function updateCarousel(hasItems: boolean) {

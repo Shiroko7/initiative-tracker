@@ -5,6 +5,8 @@ import { getPluginId } from "./getPluginId";
 export const ROUND_COUNT_METADATA_ID = "roundCount";
 export const PREVIOUS_STACK_METADATA_ID = "previousStack";
 export const GROUPS_METADATA_ID = "groups";
+export const CLEARED_INITIATIVE_METADATA_ID = "clearedInitiative";
+export const IN_COMBAT_METADATA_ID = "inCombat";
 
 export interface InitiativeGroup {
   id: number;

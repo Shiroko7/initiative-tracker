@@ -33,6 +33,10 @@ To change the initiative order you can change its initiative in the action popov
 
 You can move through the initiative order by clicking the arrow icon in the top of the extension popover.
 
+The GM can set every token to 0 or remove every token from initiative with the buttons above the list. Either one can be undone for the next two hours.
+
+The GM can also switch the scene in or out of combat. Out of combat, the turn carousel, turn markers and camera follow go away and turns can't be advanced, while the initiative list stays available for setting up the next fight. Everyone's turn display comes back as it was when combat resumes.
+
 ## Checkbox Initiative
 
 A more free form and tactical initiative system where the party and their adversaries can take turns in any order.

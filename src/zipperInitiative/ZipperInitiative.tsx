@@ -17,12 +17,14 @@ import { InitiativeItem } from "../components/InitiativeItem";
 
 import { getPluginId } from "../helpers/getPluginId";
 import { InitiativeHeader } from "../components/InitiativeHeader";
+import { InitiativeToolbar } from "../components/InitiativeToolbar";
 import { Typography } from "@mui/material";
 import { EditableGroupHeading } from "../components/EditableGroupHeading";
 import {
   DISABLE_NOTIFICATION_METADATA_ID,
   DISPLAY_ROUND_METADATA_ID,
   GROUPS_METADATA_ID,
+  IN_COMBAT_METADATA_ID,
   InitiativeGroup,
   DEFAULT_INITIATIVE_GROUPS,
   PREVIOUS_STACK_METADATA_ID,
@@ -73,6 +75,7 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
   );
 
   const [roundCount, setRoundCount] = useState(1);
+  const [inCombat, setInCombat] = useState(true);
   const [displayRound, setDisplayRound] = useState(false);
   const [disableNotifications, setDisableNotifications] = useState(false);
   const [selectActiveItem, setSelectActiveItem] = useState(0);
@@ -95,6 +98,9 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
           ROUND_COUNT_METADATA_ID,
           roundCount,
         ),
+      );
+      setInCombat(
+        readBooleanFromMetadata(sceneMetadata, IN_COMBAT_METADATA_ID, true),
       );
       setPreviousStack(
         readStringArrayFromMetadata(sceneMetadata, PREVIOUS_STACK_METADATA_ID),
@@ -547,7 +553,7 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                 )}
                 <IconButton
                   onClick={handleResetClicked}
-                  disabled={role === "PLAYER" && !roundFinished}
+                  disabled={!inCombat || (role === "PLAYER" && !roundFinished)}
                 >
                   <LoopRoundedIcon
                     color={roundFinished ? "primary" : undefined}
@@ -563,6 +569,12 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                 OBR.action.setHeight(height + 64 + 2 + (displayRound ? 54 : 0))
               }
             >
+              <InitiativeToolbar
+                role={role}
+                inCombat={inCombat}
+                hasItems={initiativeItems.length > 0}
+                canSetToZero={false}
+              />
               {groupedItems.map(({ group, items }) => {
                 const allHidden =
                   items.filter((item) => item.visible).length === 0;
@@ -605,6 +617,7 @@ export function ZipperInitiative({ role }: { role: "PLAYER" | "GM" }) {
                         <InitiativeListItem
                           key={item.id}
                           item={item}
+                          inCombat={inCombat}
                           onReadyChange={(ready) => {
                             handleReadyChange(
                               item.id,

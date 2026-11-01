@@ -19,6 +19,7 @@ import { InitiativeItem } from "../components/InitiativeItem";
 import { InitiativeListItem } from "./InitiativeListItem";
 import { getPluginId } from "../helpers/getPluginId";
 import { InitiativeHeader } from "../components/InitiativeHeader";
+import { InitiativeToolbar } from "../components/InitiativeToolbar";
 import { Icon, Typography, useTheme } from "@mui/material";
 import {
   ADVANCED_CONTROLS_METADATA_ID,
@@ -26,6 +27,7 @@ import {
   DISABLE_NOTIFICATION_METADATA_ID,
   DISPLAY_ROUND_METADATA_ID,
   GROUPS_METADATA_ID,
+  IN_COMBAT_METADATA_ID,
   InitiativeGroup,
   readBooleanFromMetadata,
   readGroupsFromMetadata,
@@ -91,6 +93,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
     Map<string, InitiativeItem[]>
   >(new Map());
   const [roundCount, setRoundCount] = useState(1);
+  const [inCombat, setInCombat] = useState(true);
   const [groups, setGroups] = useState<InitiativeGroup[]>(
     DEFAULT_INITIATIVE_GROUPS,
   );
@@ -112,6 +115,9 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
           ROUND_COUNT_METADATA_ID,
           roundCount,
         ),
+      );
+      setInCombat(
+        readBooleanFromMetadata(sceneMetadata, IN_COMBAT_METADATA_ID, true),
       );
       setGroups(readGroupsFromMetadata(sceneMetadata));
     };
@@ -339,10 +345,13 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
       groups,
       sharedTurns,
     );
-    const firstSlotIds = (slots[0] ?? []).map((item) => item.id);
+    // Out of combat this only orders the tokens, nobody gets the turn
+    const firstSlotIds = inCombat
+      ? (slots[0] ?? []).map((item) => item.id)
+      : [];
 
     // Increment round if active turn was last
-    if (slots.length > 1) {
+    if (inCombat && slots.length > 1) {
       const activeIndex = findActiveSlotIndex(slots);
       if (activeIndex >= slots.length - 1) {
         const newRoundCount = roundCount + 1;
@@ -589,7 +598,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                   <IconButton
                     aria-label="next"
                     onClick={() => handleDirectionClick()}
-                    disabled={initiativeItems.length === 0}
+                    disabled={initiativeItems.length === 0 || !inCombat}
                   >
                     <SkipNextRounded />
                   </IconButton>
@@ -606,6 +615,12 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                 )
               }
             >
+              <InitiativeToolbar
+                role={role}
+                inCombat={inCombat}
+                hasItems={initiativeItems.length > 0}
+                canSetToZero
+              />
               {groupedItems.map(({ group, items }) => {
                 const showHint =
                   items.length === 0 ||
@@ -703,7 +718,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                   <IconButton
                     aria-label="previous"
                     onClick={() => handleDirectionClick(false)}
-                    disabled={initiativeItems.length === 0}
+                    disabled={initiativeItems.length === 0 || !inCombat}
                   >
                     <SkipPreviousRoundedIcon />
                   </IconButton>
@@ -720,7 +735,7 @@ export function InitiativeTracker({ role }: { role: "PLAYER" | "GM" }) {
                   <IconButton
                     aria-label="next"
                     onClick={() => handleDirectionClick()}
-                    disabled={initiativeItems.length === 0}
+                    disabled={initiativeItems.length === 0 || !inCombat}
                   >
                     <SkipNextRounded />
                   </IconButton>

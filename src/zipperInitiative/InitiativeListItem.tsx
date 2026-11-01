@@ -24,12 +24,14 @@ import { cn } from "../helpers/utils";
 
 export function InitiativeListItem({
   item,
+  inCombat,
   onReadyChange,
   showHidden: roleIsGm,
   edit,
   selected,
 }: {
   item: InitiativeItem;
+  inCombat: boolean;
   onReadyChange: (ready: boolean) => void;
   showHidden: boolean;
   edit: boolean;
@@ -79,7 +81,7 @@ export function InitiativeListItem({
               value={item.count}
               onChange={(e) => onReadyChange(e.target.checked)}
               onDoubleClick={(e) => e.stopPropagation()}
-              disabled={!item.active && !item.ready}
+              disabled={!inCombat || (!item.active && !item.ready)}
             />
           )}
         </>
