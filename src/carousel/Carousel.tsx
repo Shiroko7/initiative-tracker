@@ -64,6 +64,10 @@ const SHARED_OVERLAP = 0.4;
 const MOVE_DRAG_DISTANCE = 3;
 // How quickly a dragged carousel catches up with the pointer, in milliseconds
 const MOVE_CATCH_UP_TIME = 80;
+// Owlbear Rodeo may not let a popover fill the screen exactly, so the popover
+// counts as covering it past this share of the screen, more than a resting
+// carousel ever takes up in both directions
+const MOVE_COVERED_SHARE = 0.6;
 
 export function Carousel() {
   const [role, setRole] = useState<"GM" | "PLAYER">("PLAYER");
@@ -593,9 +597,9 @@ function useMoveDrag(
   const [frameCss, setFrameCss] = useState<string>();
   const [busy, setBusy] = useState(false);
 
-  const isFullScreen = (viewport: Size) =>
-    window.innerWidth >= viewport.width - 2 &&
-    window.innerHeight >= viewport.height - 2;
+  const coversScreen = (viewport: Size) =>
+    window.innerWidth >= viewport.width * MOVE_COVERED_SHARE &&
+    window.innerHeight >= viewport.height * MOVE_COVERED_SHARE;
 
   // Drawn straight to the page, rendering on every move would make it stutter
   const draw = ({ left, top }: { left: number; top: number }) => {
@@ -649,7 +653,7 @@ function useMoveDrag(
   const handleResize = () => {
     const current = drag.current;
     if (!current?.viewport) return;
-    if (isFullScreen(current.viewport)) {
+    if (coversScreen(current.viewport)) {
       markCovered(current);
     } else if (current.phase === "DROPPING" && current.covered) {
       finish(current);
@@ -735,7 +739,7 @@ function useMoveDrag(
         if (current.phase === "DROPPING") return;
         // Until the popover covers the screen, the pointer is measured from
         // where the carousel started
-        const covered = isFullScreen(viewport);
+        const covered = coversScreen(viewport);
         const origin = covered ? { left: 0, top: 0 } : corner;
         const left = origin.left + e.clientX - current.grab.x;
         const top = origin.top + e.clientY - current.grab.y;
@@ -746,9 +750,13 @@ function useMoveDrag(
         )
           return;
         current.phase = "DRAGGING";
+        // Stay inside the window, which can be a little smaller than the screen
+        const bounds = covered
+          ? { width: window.innerWidth, height: window.innerHeight }
+          : viewport;
         current.position = {
-          left: clamp(left, 0, viewport.width - current.size.width),
-          top: clamp(top, 0, viewport.height - current.size.height),
+          left: clamp(left, 0, bounds.width - current.size.width),
+          top: clamp(top, 0, bounds.height - current.size.height),
         };
         if (!covered) return;
         // The window can change before its resize event has been sent
@@ -767,7 +775,7 @@ function useMoveDrag(
 
 /** Places the panel by its drag position whenever the window covers the screen. */
 function getFrameCss(viewport: Size, size: Size) {
-  return `@media (min-width: ${viewport.width - 2}px) and (min-height: ${viewport.height - 2}px) {
+  return `@media (min-width: ${viewport.width * MOVE_COVERED_SHARE}px) and (min-height: ${viewport.height * MOVE_COVERED_SHARE}px) {
     .carousel-frame {
       position: fixed;
       left: 0;
