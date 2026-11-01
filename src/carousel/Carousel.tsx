@@ -60,6 +60,10 @@ const TRACK_PADDING = 8;
 const CARD_ASPECT = 0.75;
 // Share of a card hidden under its neighbour within a shared turn
 const SHARED_OVERLAP = 0.4;
+// How far the pointer moves before pressing the carousel counts as a drag
+const MOVE_DRAG_DISTANCE = 3;
+// How quickly a dragged carousel catches up with the pointer, in milliseconds
+const MOVE_CATCH_UP_TIME = 80;
 
 export function Carousel() {
   const [role, setRole] = useState<"GM" | "PLAYER">("PLAYER");
@@ -423,7 +427,8 @@ export function Carousel() {
 
   return (
     <div
-      className={cn("flex h-full", {
+      ref={moveDrag.frameRef}
+      className={cn("carousel-frame flex h-full", {
         "items-start justify-center": preferences.carouselPosition === "TOP",
         "items-end justify-center": preferences.carouselPosition === "BOTTOM",
         "items-center justify-start": preferences.carouselPosition === "LEFT",
@@ -431,12 +436,9 @@ export function Carousel() {
         "items-start justify-start":
           preferences.carouselPosition === "FLOATING",
       })}
-      style={{
-        padding: OUTER_PADDING,
-        // While dragged, the popover covers the screen and the panel moves in it
-        ...(moveDrag.frame && { position: "fixed", ...moveDrag.frame }),
-      }}
+      style={{ padding: OUTER_PADDING }}
     >
+      {moveDrag.frameCss && <style>{moveDrag.frameCss}</style>}
       <div
         ref={panelRef}
         className={cn(
@@ -561,16 +563,24 @@ interface MoveDrag {
   corner?: { left: number; top: number };
   // Where the carousel's corner is being dragged to
   position?: { left: number; top: number };
+  // Where it's drawn
+  shown?: { left: number; top: number };
+  // How far that is from where it's being dragged to, while closing the gap
+  gap?: { left: number; top: number };
+  // Whether the popover has reached full screen yet
+  covered: boolean;
 }
 
 /**
  * Drag the carousel to anywhere on screen, making it a floating carousel
  * that keeps its current layout. A popover can't follow the pointer smoothly,
- * so while dragged it covers the whole screen and the panel moves inside it,
- * then it shrinks back around the panel where it's dropped.
+ * so from the moment it's pressed it covers the whole screen and the panel
+ * moves inside it, then it shrinks back around the panel where it's dropped.
  *
- * The popover only changes size some time after it's asked to, so the panel
- * follows the window's actual size to stay put while it changes.
+ * The popover only changes size some time after it's asked to. A media query
+ * places the panel, so it stays put in the same frame the window changes,
+ * where a resize event would come a frame late. Any distance the pointer
+ * covered in the meantime is caught up with gradually rather than jumped.
  */
 function useMoveDrag(
   preferences: PlayerPreferences,
@@ -579,29 +589,74 @@ function useMoveDrag(
   reportIn: () => void,
 ) {
   const drag = useRef<MoveDrag>();
-  const [position, setPosition] = useState<{ left: number; top: number }>();
-  const [fullScreen, setFullScreen] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frameCss, setFrameCss] = useState<string>();
   const [busy, setBusy] = useState(false);
 
   const isFullScreen = (viewport: Size) =>
     window.innerWidth >= viewport.width - 2 &&
     window.innerHeight >= viewport.height - 2;
 
+  // Drawn straight to the page, rendering on every move would make it stutter
+  const draw = ({ left, top }: { left: number; top: number }) => {
+    frameRef.current?.style.setProperty("--frame-left", `${left}px`);
+    frameRef.current?.style.setProperty("--frame-top", `${top}px`);
+  };
+
+  // Only the gap shrinks gradually, the pointer's movement still applies 1:1
+  const catchUp = (current: MoveDrag) => {
+    const { position, shown } = current;
+    if (!position || !shown) return;
+    const alreadyRunning = current.gap !== undefined;
+    current.gap = {
+      left: shown.left - position.left,
+      top: shown.top - position.top,
+    };
+    if (alreadyRunning) return;
+    let previousTime = performance.now();
+    const step = (time: number) => {
+      const { position, gap } = current;
+      if (drag.current !== current || !position || !gap) return;
+      const remaining = Math.exp(
+        -Math.max(0, time - previousTime) / MOVE_CATCH_UP_TIME,
+      );
+      previousTime = time;
+      const left = gap.left * remaining;
+      const top = gap.top * remaining;
+      current.gap = Math.hypot(left, top) > 0.5 ? { left, top } : undefined;
+      current.shown = current.gap
+        ? { left: position.left + left, top: position.top + top }
+        : position;
+      draw(current.shown);
+      if (current.gap) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
+  const markCovered = (current: MoveDrag) => {
+    if (current.covered) return;
+    current.covered = true;
+    catchUp(current);
+  };
+
   const finish = (current: MoveDrag) => {
     if (drag.current !== current) return;
     drag.current = undefined;
-    setPosition(undefined);
-    setFullScreen(false);
+    setFrameCss(undefined);
     setBusy(false);
   };
 
+  const handleResize = () => {
+    const current = drag.current;
+    if (!current?.viewport) return;
+    if (isFullScreen(current.viewport)) {
+      markCovered(current);
+    } else if (current.phase === "DROPPING" && current.covered) {
+      finish(current);
+    }
+  };
+
   useEffect(() => {
-    const handleResize = () => {
-      const current = drag.current;
-      const full = !!current?.viewport && isFullScreen(current.viewport);
-      setFullScreen(full);
-      if (current?.phase === "DROPPING" && !full) finish(current);
-    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -609,23 +664,27 @@ function useMoveDrag(
   const drop = () => {
     const current = drag.current;
     if (!current) return;
-    const { viewport, position } = current;
-    if (current.phase !== "DRAGGING" || !viewport || !position) {
+    const { viewport, position, phase } = current;
+    if (!viewport) {
       finish(current);
       return;
     }
     current.phase = "DROPPING";
-    const placed: PlayerPreferences = {
-      ...preferences,
-      carouselPosition: "FLOATING",
-      carouselFloatingVertical: vertical,
-      carouselFloatingX: position.left / viewport.width,
-      carouselFloatingY: position.top / viewport.height,
-    };
+    // Only pressed without moving: the carousel goes back to how it was
+    const placed: PlayerPreferences =
+      phase === "DRAGGING" && position
+        ? {
+            ...preferences,
+            carouselPosition: "FLOATING",
+            carouselFloatingVertical: vertical,
+            carouselFloatingX: position.left / viewport.width,
+            carouselFloatingY: position.top / viewport.height,
+          }
+        : preferences;
     OBR.popover.open(getCarouselPopover(placed, viewport, current.size));
     // The background script places the carousel the same way, at this size
     reportIn();
-    writePlayerPreferences(placed);
+    if (placed !== preferences) writePlayerPreferences(placed);
     // In case the window never reports shrinking back
     setTimeout(() => finish(current), 1000);
   };
@@ -633,11 +692,8 @@ function useMoveDrag(
   return {
     busy,
     dragging: busy && drag.current?.phase !== "DROPPING",
-    // Where to draw the carousel while its popover covers the screen
-    frame:
-      fullScreen && position
-        ? { ...position, ...drag.current?.size }
-        : undefined,
+    frameRef,
+    frameCss,
     handlers: {
       onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -648,18 +704,27 @@ function useMoveDrag(
           phase: "PRESSED",
           grab: { x: e.clientX, y: e.clientY },
           size: { ...size.current },
+          covered: false,
         };
         drag.current = current;
         setBusy(true);
         Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]).then(
           ([width, height]) => {
             if (drag.current !== current || width <= 0 || height <= 0) return;
-            current.viewport = { width, height };
-            current.corner = getCarouselCorner(
+            const viewport = { width, height };
+            const corner = getCarouselCorner(
               preferences,
-              current.viewport,
+              viewport,
               current.size,
             );
+            current.viewport = viewport;
+            current.corner = corner;
+            current.position = corner;
+            current.shown = corner;
+            draw(corner);
+            setFrameCss(getFrameCss(viewport, current.size));
+            OBR.popover.open(getFullScreenCarouselPopover(viewport));
+            handleResize();
           },
         );
       },
@@ -668,37 +733,51 @@ function useMoveDrag(
         const { viewport, corner } = current ?? {};
         if (!current || !viewport || !corner) return;
         if (current.phase === "DROPPING") return;
-        if (
-          current.phase === "PRESSED" &&
-          Math.hypot(e.clientX - current.grab.x, e.clientY - current.grab.y) < 4
-        )
-          return;
-        if (current.phase === "PRESSED") {
-          current.phase = "DRAGGING";
-          OBR.popover.open(getFullScreenCarouselPopover(viewport));
-        }
         // Until the popover covers the screen, the pointer is measured from
         // where the carousel started
-        const origin = isFullScreen(viewport) ? { left: 0, top: 0 } : corner;
-        const next = {
-          left: clamp(
-            origin.left + e.clientX - current.grab.x,
-            0,
-            viewport.width - current.size.width,
-          ),
-          top: clamp(
-            origin.top + e.clientY - current.grab.y,
-            0,
-            viewport.height - current.size.height,
-          ),
+        const covered = isFullScreen(viewport);
+        const origin = covered ? { left: 0, top: 0 } : corner;
+        const left = origin.left + e.clientX - current.grab.x;
+        const top = origin.top + e.clientY - current.grab.y;
+        const started = current.phase === "PRESSED";
+        if (
+          started &&
+          Math.hypot(left - corner.left, top - corner.top) < MOVE_DRAG_DISTANCE
+        )
+          return;
+        current.phase = "DRAGGING";
+        current.position = {
+          left: clamp(left, 0, viewport.width - current.size.width),
+          top: clamp(top, 0, viewport.height - current.size.height),
         };
-        current.position = next;
-        setPosition(next);
+        if (!covered) return;
+        // The window can change before its resize event has been sent
+        markCovered(current);
+        // Ease out of the distance it took to tell this was a drag
+        if (started) catchUp(current);
+        if (current.gap) return;
+        current.shown = current.position;
+        draw(current.shown);
       },
       onPointerUp: drop,
       onPointerCancel: drop,
     },
   };
+}
+
+/** Places the panel by its drag position whenever the window covers the screen. */
+function getFrameCss(viewport: Size, size: Size) {
+  return `@media (min-width: ${viewport.width - 2}px) and (min-height: ${viewport.height - 2}px) {
+    .carousel-frame {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: ${size.width}px;
+      height: ${size.height}px;
+      transform: translate3d(var(--frame-left), var(--frame-top), 0);
+      will-change: transform;
+    }
+  }`;
 }
 
 function clamp(value: number, min: number, max: number) {
