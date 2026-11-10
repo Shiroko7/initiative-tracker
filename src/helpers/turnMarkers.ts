@@ -92,7 +92,9 @@ async function buildMarker(
     .maxViewScale(1.5)
     .minViewScale(0.8)
     .attachedTo(itemId)
-    .disableAttachmentBehavior(["ROTATION", "LOCKED"])
+    // Flipping a token gives it a negative scale; inheriting that would
+    // turn the label upside down or mirror it
+    .disableAttachmentBehavior(["ROTATION", "LOCKED", "SCALE"])
     .locked(true)
     .disableHit(true)
     .metadata(metadata)
